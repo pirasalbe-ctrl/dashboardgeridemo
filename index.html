@@ -697,7 +697,7 @@ function getDaysShifted(da, a) {
   while(d<=end){ days.push(d.toISOString().split('T')[0]); d.setDate(d.getDate()+1); }
   return days;
 }
-let allMF=[], allMT=[], allMP=[], allLM=[], allCAM=[];
+let allMF=[], allMT=[], allMP=[], allLM=[], allCAM=[], allAN=[];
 let charts={};
 
 const fmt = v => '€'+Number(v||0).toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -726,17 +726,19 @@ async function loadAll() {
   document.getElementById('syncInfo').textContent='...';
   const{da,a}=getRange();
   try {
-    [allMF,allMT,allMP,allLM,allCAM] = await Promise.all([
+    [allMF,allMT,allMP,allLM,allCAM,allAN] = await Promise.all([
       sbGet('movfisc',{'data':'gte.'+da,'order':'data.asc'}),
       sbGet('movtav',{'dataoracomanda':'gte.'+da+'T00:00:00','order':'dataoracomanda.asc'}),
       sbGet('movpag',{'data':'gte.'+da,'order':'data.asc'}),
       sbGet('log_modifiche',{'order':'dataora.desc'}).catch(()=>[]),
+      sbGet('anomalie',{'data':'gte.'+da,'order':'dataora.desc'}).catch(()=>[]),
       sbGet('camerieri',{'order':'id.asc'}).catch(()=>[])
     ]);
     allMF=allMF.filter(r=>r.data>=da&&r.data<=a);
     allMT=allMT.filter(r=>{if(!r.dataoracomanda)return false;const d=r.dataoracomanda.split('T')[0];return d>=da&&d<=a;});
     allMP=allMP.filter(r=>r.data>=da&&r.data<=a);
     allLM=allLM.filter(r=>{if(!r.dataora)return false;const d=r.dataora.split('T')[0];return d>=da&&d<=a;});
+    allAN=allAN.filter(r=>r.data>=da&&r.data<=a);
     document.getElementById('syncInfo').textContent=new Date().toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
     // Carica anche dati anni precedenti se selezionati
     if (activeAnni.length > 1) {
@@ -1459,7 +1461,8 @@ function renderAnomalie(){
   const mf=getMF();
   const storni=mf.filter(r=>r.totale<0);
   const negativi=allMP.filter(r=>r.importo<0);
-  const scontiDoc=allMT.filter(r=>r.descrizione&&r.descrizione.toLowerCase().includes('sconto')&&r.prezzo<0);
+  // Usa anomalie reali da Supabase (sync da LINEEMOVFISC)
+  const scontiDoc=allAN.filter(r=>r.tipo==='sconto');
 
   const tipoLabel={1:'STORNO',2:'CAMBIO PREZZO',3:'SCONTO',4:'ANNULL.'};
   const tipoBadge={1:'b-storno',2:'b-cambio',3:'b-sconto',4:'b-annull'};
@@ -1467,7 +1470,7 @@ function renderAnomalie(){
   document.getElementById('kpiAnomalie').innerHTML=`
     <div class="kpi red"><div class="label">Storni doc.</div><div class="value">${storni.length}</div><div class="sub">${fmt(Math.abs(storni.reduce((a,r)=>a+(r.totale||0),0)))}</div></div>
     <div class="kpi amber"><div class="label">Pagamenti neg.</div><div class="value">${negativi.length}</div></div>
-    <div class="kpi" style="border-top:3px solid #bf5af2"><div class="label">Sconti su righe</div><div class="value">${scontiDoc.length}</div></div>
+    <div class="kpi" style="border-top:3px solid #bf5af2"><div class="label">Sconti</div><div class="value">${scontiDoc.length}</div><div class="sub">${fmt(scontiDoc.reduce((a,r)=>a+Math.abs(r.importo||0),0))}</div></div>
     <div class="kpi blue"><div class="label">Log modifiche</div><div class="value">${allLM.length}</div></div>`;
 
   // Costruisce tutti gli items
@@ -1499,9 +1502,9 @@ function renderAnomalie(){
   const scontiItems = scontiDoc.map(r=>({
     tipo: 'sconto',
     badge: 'b-sconto', label: 'SCONTO',
-    desc: (r.descrizione||'Sconto')+' — '+fmt(r.prezzo),
-    meta: (r.dataoracomanda?new Date(r.dataoracomanda).toLocaleString('it-IT',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'')+(r.idcameriere?' · '+nomeCameriere(r.idcameriere):''),
-    ts: r.dataoracomanda||''
+    desc: (r.descrizione||'Sconto')+' — '+fmt(Math.abs(r.importo||0))+(r.tavolo?' · Tavolo '+r.tavolo:''),
+    meta: (r.dataora?new Date(r.dataora).toLocaleString('it-IT',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'')+(r.idcameriere?' · '+nomeCameriere(r.idcameriere):''),
+    ts: r.dataora||''
   }));
 
   let all = [...logItems, ...storniItems, ...negativiItems, ...scontiItems];
