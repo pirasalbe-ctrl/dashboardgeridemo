@@ -454,7 +454,7 @@ const CCOLORS = { tavoli:'#30d158', immediato:'#0071e3', asporto:'#ff9f0a', domi
 const PAL = ['#30d158','#0071e3','#ff9f0a','#ff3b30','#bf5af2','#ac8e68','#636366'];
 
 let showP=false, curFilter='oggi', curVendCanale='tutti';
-let allMF=[], allMT=[], allMP=[], allLM=[];
+let allMF=[], allMT=[], allMP=[], allLM=[], allCAM=[];
 let charts={};
 
 const fmt = v => '€'+Number(v||0).toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -483,11 +483,12 @@ async function loadAll() {
   document.getElementById('syncInfo').textContent='...';
   const{da,a}=getRange();
   try {
-    [allMF,allMT,allMP,allLM] = await Promise.all([
+    [allMF,allMT,allMP,allLM,allCAM] = await Promise.all([
       sbGet('movfisc',{'data':'gte.'+da,'order':'data.asc'}),
       sbGet('movtav',{'dataoracomanda':'gte.'+da+'T00:00:00','order':'dataoracomanda.asc'}),
       sbGet('movpag',{'data':'gte.'+da,'order':'data.asc'}),
-      sbGet('log_modifiche',{'order':'dataora.desc'}).catch(()=>[])
+      sbGet('log_modifiche',{'order':'dataora.desc'}).catch(()=>[]),
+      sbGet('camerieri',{'order':'id.asc'}).catch(()=>[])
     ]);
     allMF=allMF.filter(r=>r.data>=da&&r.data<=a);
     allMT=allMT.filter(r=>{if(!r.dataoracomanda)return false;const d=r.dataoracomanda.split('T')[0];return d>=da&&d<=a;});
@@ -502,6 +503,7 @@ async function loadAll() {
 }
 
 function getMF(){ return showP ? allMF : allMF.filter(r=>r.tipo!=='P'); }
+function nomeCameriere(id){ const c=allCAM.find(r=>r.id===id); return c?c.nominativo:('Op. #'+(id||'?')); }
 
 function renderCurrentPage(){
   const a=document.querySelector('.page.active');
@@ -757,7 +759,7 @@ function renderCamerieri(){
   const sorted=Object.entries(cs).sort((a,b)=>b[1].inc-a[1].inc).slice(0,10);
   document.getElementById('camList').innerHTML=sorted.length?sorted.map(([id,s])=>`
     <div class="cam-row">
-      <div class="cam-name">Operatore #${id}</div>
+      <div class="cam-name">${nomeCameriere(parseInt(id))}</div>
       <div class="cam-stats">
         <div class="cam-stat"><div class="v">${fmt(s.inc)}</div><div class="l">incasso</div></div>
         <div class="cam-stat"><div class="v">${s.doc}</div><div class="l">doc</div></div>
