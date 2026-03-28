@@ -268,6 +268,15 @@ body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--bg);
 .meteo-change-btn { font-size:12px; padding:4px 10px; border-radius:8px; background:var(--bg); color:var(--text2); border:1px solid var(--border); cursor:pointer; }
 .meteo-change-btn:hover { background:var(--border); }
 .confronto-table { width:100%; border-collapse:collapse; font-size:13px; }
+.tav-card { background:var(--card); border-radius:14px; padding:14px 16px; margin-bottom:10px; display:flex; align-items:center; gap:16px; }
+.tav-num { font-size:28px; font-weight:700; color:var(--accent); min-width:48px; text-align:center; }
+.tav-info { flex:1; }
+.tav-info .ti-time { font-size:12px; color:var(--text3); margin-bottom:2px; }
+.tav-info .ti-importo { font-size:18px; font-weight:600; color:var(--text1); }
+.tav-info .ti-cam { font-size:12px; color:var(--text3); }
+.tav-status { display:inline-block; padding:3px 8px; border-radius:6px; font-size:11px; font-weight:600; }
+.tav-status.aperto { background:#30d15820; color:#30d158; }
+.tav-durata { font-size:13px; color:var(--text2); font-weight:500; }
 .confronto-table th { text-align:left; padding:8px; color:var(--text3); font-weight:500; border-bottom:1px solid var(--border); }
 .confronto-table td { padding:8px; border-bottom:1px solid var(--border); }
 .confronto-table tr:last-child td { border-bottom:none; }
@@ -368,6 +377,7 @@ body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--bg);
   <button class="nav-btn" onclick="goPage('pagamenti',this)">Pagamenti</button>
   <button class="nav-btn" onclick="goPage('documenti',this)">Documenti</button>
   <button class="nav-btn" onclick="goPage('anomalie',this)">Anomalie</button>
+  <button class="nav-btn" onclick="goPage('tavoliaperti',this)">🟢 Tavoli aperti</button>
 </div>
 
 <div class="content">
@@ -492,6 +502,18 @@ body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--bg);
     <div class="card">
       <div class="card-title">Dettaglio</div>
       <div id="confrontoTable" style="overflow-x:auto;"></div>
+    </div>
+  </div>
+
+  <!-- TAVOLI APERTI -->
+  <div class="page" id="page-tavoliaperti">
+    <div class="kpi-grid" id="kpiTavoliAperti"></div>
+    <div class="card">
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">
+        <span>Tavoli aperti ora</span>
+        <button onclick="renderTavoliAperti()" style="font-size:12px;padding:4px 10px;border-radius:8px;background:var(--bg);border:1px solid var(--border);cursor:pointer;">🔄 Aggiorna</button>
+      </div>
+      <div id="tavoliApertiList"></div>
     </div>
   </div>
 
@@ -826,7 +848,7 @@ function renderCurrentPage(){
 function renderPage(page){
   Object.values(charts).forEach(c=>{try{c.destroy();}catch(e){}});
   charts={};
-  const fn={home:renderHome,venduto:renderVenduto,incassi:renderIncassi,piatti:renderPiatti,fasce:renderFasce,confronto:renderConfronto,tavoli:renderTavoli,camerieri:renderCamerieri,pagamenti:renderPagamenti,documenti:renderDocumenti,anomalie:renderAnomalie};
+  const fn={home:renderHome,venduto:renderVenduto,incassi:renderIncassi,piatti:renderPiatti,fasce:renderFasce,confronto:renderConfronto,tavoli:renderTavoli,camerieri:renderCamerieri,pagamenti:renderPagamenti,documenti:renderDocumenti,anomalie:renderAnomalie,tavoliaperti:renderTavoliAperti};
   if(fn[page]) fn[page]();
 }
 
@@ -1352,6 +1374,56 @@ function renderDocumenti(){
   }
 }
 
+async function renderTavoliAperti(){
+  // Legge i tavoli aperti da Supabase — sono i documenti MOVFISC di tipo P
+  // con DALLE recente e senza corrispondente chiusura (approssimazione: oggi)
+  const oggi = new Date().toISOString().split('T')[0];
+  let tavoliAperti = [];
+  try {
+    // Prende movfisc di oggi con canale tavoli — rappresentano tavoli aperti/chiusi oggi
+    const r = await fetch(
+      `${SB_URL}/rest/v1/movtav_live?select=*&order=dalle.desc`,
+      { headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY } }
+    );
+    if (r.ok) tavoliAperti = await r.json();
+  } catch(e) {}
+
+  // Fallback: usa movfisc di oggi come proxy tavoli aperti
+  if (!tavoliAperti.length) {
+    const mfOggi = allMF.filter(r => r.data === oggi && r.canale === 'tavoli' && r.tipo === 'P');
+    const now = new Date();
+    const kpiEl = document.getElementById('kpiTavoliAperti');
+    if (kpiEl) kpiEl.innerHTML = `
+      <div class="kpi green"><div class="label">Tavoli oggi</div><div class="value">${mfOggi.length}</div></div>
+      <div class="kpi blue"><div class="label">Incasso oggi</div><div class="value">${fmt(mfOggi.reduce((a,r)=>a+(r.totale||0),0))}</div></div>
+      <div class="kpi"><div class="label">Media tavolo</div><div class="value">${mfOggi.length>0?fmt(mfOggi.reduce((a,r)=>a+(r.totale||0),0)/mfOggi.length):'—'}</div></div>`;
+
+    const listEl = document.getElementById('tavoliApertiList');
+    if (!listEl) return;
+    if (!mfOggi.length) {
+      listEl.innerHTML = '<div class="empty" style="padding:20px;text-align:center;color:var(--text3)">Nessun tavolo aperto oggi</div>';
+      return;
+    }
+    listEl.innerHTML = mfOggi.sort((a,b)=>(b.ora||'').localeCompare(a.ora||'')).map(r => {
+      const oraAp = r.ora ? new Date(r.ora) : null;
+      const durMs = oraAp ? now - oraAp : 0;
+      const durMin = Math.floor(durMs / 60000);
+      const durStr = durMin > 60 ? Math.floor(durMin/60)+'h '+('0'+durMin%60).slice(-2)+'m' : durMin+'m';
+      const oraStr = oraAp ? oraAp.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'}) : '—';
+      return `<div class="tav-card">
+        <div class="tav-num">T${r.tavolo||r.camera||'?'}</div>
+        <div class="tav-info">
+          <div class="ti-time">Aperto alle ${oraStr} · <span class="tav-durata">${durStr}</span></div>
+          <div class="ti-importo">${fmt(r.totale||0)}</div>
+          <div class="ti-cam">${nomeCameriere(r.idcameriere)}</div>
+        </div>
+        <span class="tav-status aperto">APERTO</span>
+      </div>`;
+    }).join('');
+    return;
+  }
+}
+
 function renderAnomalie(){
   const mf=getMF();
   const storni=mf.filter(r=>r.totale<0);
@@ -1411,6 +1483,7 @@ document.getElementById('d2').value=oggi.toISOString().split('T')[0];
 const mfa=new Date(oggi);mfa.setMonth(mfa.getMonth()-1);
 document.getElementById('d1').value=mfa.toISOString().split('T')[0];
 
+initAnnoSelector();
 loadAll();
 setInterval(loadAll, 60000);
 </script>
