@@ -87,6 +87,17 @@ body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--bg);
 }
 .filter-btn:active { transform: scale(0.96); }
 .filter-btn.active { background: var(--text); color: #fff; border-color: var(--text); }
+.anno-sel { display:flex; align-items:center; gap:6px; margin-left:8px; padding-left:8px; border-left:1px solid var(--border); }
+.anno-sel-label { font-size:11px; color:var(--text3); white-space:nowrap; }
+.anno-btn { font-size:11px; font-weight:600; padding:3px 8px; border-radius:6px; border:1px solid var(--border); background:var(--bg); color:var(--text2); cursor:pointer; transition:all 0.15s; }
+.anno-btn.active { color:#fff; border-color:transparent; }
+.cfr-badge { display:inline-block; font-size:10px; padding:1px 5px; border-radius:4px; color:#fff; margin-left:3px; vertical-align:middle; }
+.anno-cfr-bar { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px; }
+.anno-cfr-card { flex:1; min-width:140px; background:var(--card); border-radius:14px; padding:12px 16px; border-top:3px solid transparent; }
+.anno-cfr-card .acf-anno { font-size:11px; font-weight:600; color:var(--text3); margin-bottom:2px; }
+.anno-cfr-card .acf-val { font-size:20px; font-weight:700; color:var(--text1); }
+.anno-cfr-card .acf-sub { font-size:11px; color:var(--text3); margin-top:2px; }
+.anno-cfr-card .acf-delta { font-size:12px; font-weight:600; margin-top:4px; }
 .date-range { display: flex; gap: 6px; align-items: center; }
 .date-range input {
   font-size: 13px; padding: 7px 10px; border: 1.5px solid var(--border);
@@ -339,6 +350,10 @@ body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--bg);
     <input type="date" id="d2">
     <button class="apply-btn" onclick="loadAll()">OK</button>
   </div>
+  <div class="anno-sel">
+    <span class="anno-sel-label">Anni:</span>
+    <div id="annoSelBtns" style="display:flex;gap:4px;"></div>
+  </div>
 </div>
 
 <div class="nav">
@@ -371,6 +386,7 @@ body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--bg);
 
   <!-- VENDUTO -->
   <div class="page" id="page-venduto">
+    <div id="annoCfr_page_venduto"></div>
     <div class="vend-grid" id="vendGrid"></div>
     <div class="card"><div class="card-title">Andamento per canale</div><div class="chart-wrap" style="height:240px;"><canvas id="chartVendCanali"></canvas></div></div>
     <div class="two-col">
@@ -392,18 +408,21 @@ body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--bg);
 
   <!-- INCASSI -->
   <div class="page" id="page-incassi">
+    <div id="annoCfr_page_incassi"></div>
     <div class="kpi-grid" id="kpiIncassi"></div>
     <div class="card"><div class="card-title">Andamento</div><div class="chart-wrap" style="height:240px;"><canvas id="chartIncassi"></canvas></div></div>
   </div>
 
   <!-- PIATTI -->
   <div class="page" id="page-piatti">
+    <div id="annoCfr_page_piatti"></div>
     <div class="card"><div class="card-title">Più venduti</div><div id="piattiList"></div></div>
     <div class="card"><div class="card-title">Per piatto (top 6)</div><div class="chart-wrap" style="height:210px;"><canvas id="chartCat"></canvas></div></div>
   </div>
 
   <!-- FASCE -->
   <div class="page" id="page-fasce">
+    <div id="annoCfr_page_fasce"></div>
     <div class="card">
       <div class="card-title">Distribuzione per ora</div>
       <div class="legend">
@@ -478,6 +497,7 @@ body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--bg);
 
   <!-- TAVOLI -->
   <div class="page" id="page-tavoli">
+    <div id="annoCfr_page_tavoli"></div>
     <div class="servizio-grid" id="tavServGrid"></div>
     <div class="kpi-grid" id="kpiTavoli"></div>
     <div class="card"><div class="card-title">Coperti per servizio</div><div class="chart-wrap" style="height:210px;"><canvas id="chartTavoli"></canvas></div></div>
@@ -485,12 +505,14 @@ body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--bg);
 
   <!-- CAMERIERI -->
   <div class="page" id="page-camerieri">
+    <div id="annoCfr_page_camerieri"></div>
     <div class="card"><div class="card-title">Performance</div><div id="camList"></div></div>
     <div class="card"><div class="card-title">Incasso per operatore</div><div class="chart-wrap" style="height:210px;"><canvas id="chartCam"></canvas></div></div>
   </div>
 
   <!-- PAGAMENTI -->
   <div class="page" id="page-pagamenti">
+    <div id="annoCfr_page_pagamenti"></div>
     <div class="card">
       <div class="card-title">Metodi di pagamento</div>
       <div class="legend" id="pagLegend"></div>
@@ -501,6 +523,7 @@ body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--bg);
 
   <!-- DOCUMENTI -->
   <div class="page" id="page-documenti">
+    <div id="annoCfr_page_documenti"></div>
     <div class="card"><div class="card-title">Per tipo documento</div><div id="docList"></div></div>
     <div class="card">
       <div class="card-title">Distribuzione</div>
@@ -524,6 +547,118 @@ const CCOLORS = { tavoli:'#30d158', immediato:'#0071e3', asporto:'#ff9f0a', domi
 const PAL = ['#30d158','#0071e3','#ff9f0a','#ff3b30','#bf5af2','#ac8e68','#636366'];
 
 let showP=false, curFilter='oggi', curVendCanale='tutti';
+let activeAnni = [new Date().getFullYear()]; // anni selezionati globalmente
+const ANNO_COLORS = ['#30d158','#0071e3','#ff9f0a']; // verde, blu, arancio
+
+function renderAnnoCfrBar(containerId, getMFForAnno) {
+  // Mostra KPI comparativi per tutti gli anni attivi
+  // getMFForAnno(anno) deve restituire i record movfisc per quell'anno nel periodo corrente
+  if (activeAnni.length <= 1) {
+    const el = document.getElementById(containerId);
+    if (el) el.innerHTML = '';
+    return;
+  }
+  const{da,a}=getRange();
+  const cards = activeAnni.map((anno, i) => {
+    const shift = anno - activeAnni[0];
+    const daS = shiftAnno(da, shift);
+    const aS = shiftAnno(a, shift);
+    const recs = showP ? allMF.filter(r=>r.data>=daS&&r.data<=aS) : allMF.filter(r=>r.data>=daS&&r.data<=aS&&r.tipo!=='P');
+    const totale = recs.reduce((a,r)=>a+(r.totale||0),0);
+    const nDoc = recs.length;
+    // Delta rispetto all'anno base (primo)
+    let deltaHtml = '';
+    if (i > 0) {
+      const baseShift = activeAnni[0] - activeAnni[0];
+      const baseRecs = showP ? allMF.filter(r=>r.data>=da&&r.data<=a) : allMF.filter(r=>r.data>=da&&r.data<=a&&r.tipo!=='P');
+      const baseTot = baseRecs.reduce((a,r)=>a+(r.totale||0),0);
+      if (baseTot > 0) {
+        const dlt = Math.round((baseTot - totale) / totale * 100);
+        deltaHtml = `<div class="acf-delta" style="color:${dlt>=0?'#30d158':'#ff3b30'}">${dlt>=0?'+':''}${dlt}% vs ${anno}</div>`;
+      }
+    }
+    return `<div class="anno-cfr-card" style="border-top-color:${ANNO_COLORS[i]}">
+      <div class="acf-anno">${anno}</div>
+      <div class="acf-val">${fmt(totale)}</div>
+      <div class="acf-sub">${nDoc} documenti</div>
+      ${deltaHtml}
+    </div>`;
+  });
+  const el = document.getElementById(containerId);
+  if (el) el.innerHTML = '<div class="anno-cfr-bar">'+cards.join('')+'</div>';
+}
+
+function initAnnoSelector() {
+  const oggi = new Date().getFullYear();
+  const anni = [oggi, oggi-1, oggi-2];
+  const el = document.getElementById('annoSelBtns');
+  if (!el) return;
+  el.innerHTML = '';
+  anni.forEach((anno, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'anno-btn' + (anno === oggi ? ' active' : '');
+    btn.dataset.anno = anno;
+    btn.textContent = anno;
+    if (anno === oggi) {
+      btn.style.background = ANNO_COLORS[0];
+      btn.style.borderColor = ANNO_COLORS[0];
+    }
+    btn.onclick = function() {
+      const a = parseInt(this.dataset.anno);
+      if (activeAnni.includes(a)) {
+        if (activeAnni.length === 1) return; // almeno 1 anno
+        activeAnni = activeAnni.filter(x => x !== a);
+      } else {
+        if (activeAnni.length >= 3) return; // max 3 anni
+        activeAnni = [...activeAnni, a].sort((a,b) => b-a);
+      }
+      updateAnnoSelector();
+      renderCurrentPage();
+    };
+    el.appendChild(btn);
+  });
+}
+
+function updateAnnoSelector() {
+  document.querySelectorAll('.anno-btn').forEach(btn => {
+    const a = parseInt(btn.dataset.anno);
+    const idx = activeAnni.indexOf(a);
+    if (idx >= 0) {
+      btn.classList.add('active');
+      btn.style.background = ANNO_COLORS[idx];
+      btn.style.borderColor = ANNO_COLORS[idx];
+    } else {
+      btn.classList.remove('active');
+      btn.style.background = '';
+      btn.style.borderColor = '';
+    }
+  });
+}
+
+function getAnniMF() {
+  // Restituisce array di {anno, records} per tutti gli anni attivi
+  const{da,a}=getRange();
+  return activeAnni.map((anno, i) => {
+    const shift = anno - activeAnni[0]; // differenza anni rispetto al primo
+    const daShifted = shiftAnno(da, shift);
+    const aShifted = shiftAnno(a, shift);
+    const records = allMF.filter(r => r.data >= daShifted && r.data <= aShifted);
+    return { anno, records, da: daShifted, a: aShifted, color: ANNO_COLORS[i] };
+  });
+}
+
+function shiftAnno(dateStr, years) {
+  if (!dateStr) return dateStr;
+  const d = new Date(dateStr);
+  d.setFullYear(d.getFullYear() + years);
+  return d.toISOString().split('T')[0];
+}
+
+function getDaysShifted(da, a) {
+  const days = [], d = new Date(da), end = new Date(a);
+  while(d<=end){ days.push(d.toISOString().split('T')[0]); d.setDate(d.getDate()+1); }
+  return days;
+}
 let allMF=[], allMT=[], allMP=[], allLM=[], allCAM=[];
 let charts={};
 
@@ -565,6 +700,21 @@ async function loadAll() {
     allMP=allMP.filter(r=>r.data>=da&&r.data<=a);
     allLM=allLM.filter(r=>{if(!r.dataora)return false;const d=r.dataora.split('T')[0];return d>=da&&d<=a;});
     document.getElementById('syncInfo').textContent=new Date().toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
+    // Carica anche dati anni precedenti se selezionati
+    if (activeAnni.length > 1) {
+      const{da,a}=getRange();
+      for (let i=1; i<activeAnni.length; i++) {
+        const shift = activeAnni[i] - activeAnni[0];
+        const daS = shiftAnno(da, shift);
+        const aS = shiftAnno(a, shift);
+        try {
+          const extra = await sbGet('movfisc',{'data':'gte.'+daS,'data2':'lte.'+aS,'order':'data.asc'});
+          // merge into allMF avoiding duplicates
+          const existing = new Set(allMF.map(r=>r.codice));
+          extra.filter(r=>!existing.has(r.codice)).forEach(r=>allMF.push(r));
+        } catch(e) { /* silent */ }
+      }
+    }
     renderCurrentPage();
   } catch(e) {
     document.getElementById('syncInfo').textContent='Errore';
@@ -776,6 +926,7 @@ function renderHome(){
 }
 
 function renderVenduto(){
+  renderAnnoCfrBar('annoCfr_page_venduto');
   const mf=getMF();
   const canali=['tavoli','immediato','asporto','domicilio'];
   const cLabels=['Tavoli','Conto immediato','Asporto','Domicilio'];
@@ -823,6 +974,7 @@ function setVendCanale(c,btn){
 }
 
 function renderIncassi(){
+  renderAnnoCfrBar('annoCfr_page_incassi');
   const mf=getMF();
   const giorni=[...new Set(mf.map(r=>r.data))].sort();
   const totale=mf.reduce((a,r)=>a+(r.totale||0),0);
@@ -842,6 +994,7 @@ function renderIncassi(){
 }
 
 function renderPiatti(){
+  renderAnnoCfrBar('annoCfr_page_piatti');
   const cnt={};
   allMT.forEach(r=>{const k=r.descrizione||'?';cnt[k]=(cnt[k]||0)+(r.quant||1);});
   const sorted=Object.entries(cnt).sort((a,b)=>b[1]-a[1]).slice(0,15);
@@ -853,6 +1006,7 @@ function renderPiatti(){
 }
 
 function renderFasce(){
+  renderAnnoCfrBar('annoCfr_page_fasce');
   const mf=getMF();
   const oreCnt={};
   for(let h=6;h<=23;h++) oreCnt[h]=0;
@@ -1126,6 +1280,7 @@ async function renderConfronto() {
 
 
 function renderTavoli(){
+  renderAnnoCfrBar('annoCfr_page_tavoli');
   const mf=getMF();
   const {col,pra,cen,colN,praN,cenN}=copertiPerServizio();
   const totale=mf.reduce((a,r)=>a+(r.totale||0),0);
@@ -1141,6 +1296,7 @@ function renderTavoli(){
 }
 
 function renderCamerieri(){
+  renderAnnoCfrBar('annoCfr_page_camerieri');
   const mf=getMF();
   const cs={};
   mf.forEach(r=>{const id=r.idcameriere||0;if(!cs[id])cs[id]={inc:0,doc:0};cs[id].inc+=(r.totale||0);cs[id].doc++;});
@@ -1160,6 +1316,7 @@ function renderCamerieri(){
 }
 
 function renderPagamenti(){
+  renderAnnoCfrBar('annoCfr_page_pagamenti');
   const ps={};
   allMP.forEach(r=>{const k=r.desc_pagamento||'Altro';ps[k]=(ps[k]||0)+(r.importo||0);});
   const sorted=Object.entries(ps).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]);
@@ -1173,6 +1330,7 @@ function renderPagamenti(){
 }
 
 function renderDocumenti(){
+  renderAnnoCfrBar('annoCfr_page_documenti');
   const mf=getMF();
   const tipi=[...new Set(allMF.map(r=>r.tipo))].filter(Boolean).sort();
   const cls={S:'b-S',F:'b-F',P:'b-P'};
