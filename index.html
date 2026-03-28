@@ -1410,34 +1410,63 @@ async function renderTavoliAperti(){
     return;
   }
 
-  listEl.innerHTML = aperti.map(t => {
-    // Calcola durata apertura
-    let durStr = '—';
-    if (t.oraoccupaz) {
-      // oraoccupaz è una stringa tipo "16:29:37.237"
-      const parts = t.oraoccupaz.split(':');
-      const oraAp = new Date();
-      oraAp.setHours(parseInt(parts[0])||0, parseInt(parts[1])||0, parseInt(parts[2])||0);
-      const durMs = now - oraAp;
-      if (durMs > 0) {
-        const durMin = Math.floor(durMs / 60000);
-        durStr = durMin >= 60
-          ? Math.floor(durMin/60)+'h '+('0'+durMin%60).slice(-2)+'m'
-          : durMin+'m';
-      }
-    }
-    const oraStr = t.oraoccupaz ? t.oraoccupaz.substring(0,5) : '—';
-    const zona = t.zona ? ` · ${t.zona}` : '';
-    return `<div class="tav-card">
-      <div class="tav-num">${t.posizione||t.codice}</div>
-      <div class="tav-info">
-        <div class="ti-time">Aperto alle <strong>${oraStr}</strong> · <span class="tav-durata">⏱ ${durStr}</span>${zona}</div>
-        <div class="ti-importo">${fmt(t.totconto||0)}</div>
-        <div class="ti-cam">${nomeCameriere(t.idcameriere)} · ${t.posti||'?'} posti</div>
-      </div>
-      <span class="tav-status aperto">● APERTO</span>
-    </div>`;
-  }).join('');
+  // Separa tavoli fisici da asporti
+  const tavoliSala = aperti.filter(t => t.tipo === 'tavolo');
+  const tavoliAsporto = aperti.filter(t => t.tipo === 'asporto');
+  const totSala = tavoliSala.reduce((a,t)=>a+(t.totconto||0),0);
+  const totAsporto = tavoliAsporto.reduce((a,t)=>a+(t.totconto||0),0);
+  const totCoperti = tavoliSala.reduce((a,t)=>a+(t.coperti||0),0);
+
+  if (kpiEl) kpiEl.innerHTML = `
+    <div class="kpi green"><div class="label">Tavoli aperti</div><div class="value">${tavoliSala.length}</div><div class="sub">${totCoperti} coperti</div></div>
+    <div class="kpi blue"><div class="label">Da incassare sala</div><div class="value">${fmt(totSala)}</div></div>
+    ${tavoliAsporto.length ? `<div class="kpi amber"><div class="label">Asporti in attesa</div><div class="value">${tavoliAsporto.length}</div><div class="sub">${fmt(totAsporto)}</div></div>` : ''}
+    <div class="kpi"><div class="label">Aggiornato alle</div><div class="value">${now.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}</div><div class="sub">sync ogni 10 min</div></div>`;
+
+  function calcolaDurata(ora) {
+    if (!ora) return '—';
+    const parts = ora.split(':');
+    const oraAp = new Date();
+    oraAp.setHours(parseInt(parts[0])||0, parseInt(parts[1])||0, 0);
+    const durMs = now - oraAp;
+    if (durMs <= 0) return '—';
+    const durMin = Math.floor(durMs / 60000);
+    return durMin >= 60 ? Math.floor(durMin/60)+'h '+('0'+durMin%60).slice(-2)+'m' : durMin+'m';
+  }
+
+  let html = '';
+  if (tavoliSala.length) {
+    html += '<div style="font-size:11px;font-weight:600;color:var(--text3);padding:8px 0 4px;">SALA</div>';
+    tavoliSala.sort((a,b)=>(a.posizione||'').localeCompare(b.posizione||'')).forEach(t => {
+      const oraStr = t.oraoccupaz ? t.oraoccupaz.substring(0,5) : '—';
+      const cop = t.coperti > 0 ? ` · 👥 ${t.coperti} coperti` : '';
+      html += `<div class="tav-card">
+        <div class="tav-num">${t.posizione}</div>
+        <div class="tav-info">
+          <div class="ti-time">Aperto alle <strong>${oraStr}</strong> · <span class="tav-durata">⏱ ${calcolaDurata(t.oraoccupaz)}</span></div>
+          <div class="ti-importo">${fmt(t.totconto||0)}</div>
+          <div class="ti-cam">${nomeCameriere(t.idcameriere)}${cop}</div>
+        </div>
+        <span class="tav-status aperto">● APERTO</span>
+      </div>`;
+    });
+  }
+  if (tavoliAsporto.length) {
+    html += '<div style="font-size:11px;font-weight:600;color:var(--text3);padding:12px 0 4px;">ASPORTI IN ATTESA</div>';
+    tavoliAsporto.forEach(t => {
+      const oraStr = t.oraoccupaz ? t.oraoccupaz.substring(0,5) : '—';
+      html += `<div class="tav-card" style="border-left:3px solid #ff9f0a;">
+        <div class="tav-num" style="color:#ff9f0a;font-size:22px;">🛵</div>
+        <div class="tav-info">
+          <div class="ti-time">In attesa dalle <strong>${oraStr}</strong> · <span class="tav-durata">⏱ ${calcolaDurata(t.oraoccupaz)}</span></div>
+          <div class="ti-importo">${fmt(t.totconto||0)}</div>
+          <div class="ti-cam">${nomeCameriere(t.idcameriere)}</div>
+        </div>
+        <span class="tav-status" style="background:#ff9f0a20;color:#ff9f0a;">● ASPORTO</span>
+      </div>`;
+    });
+  }
+  listEl.innerHTML = html;
 }
 
 function renderAnomalie(){
