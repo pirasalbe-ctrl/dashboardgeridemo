@@ -485,12 +485,12 @@ async function loadAll() {
   try {
     [allMF,allMT,allMP,allLM] = await Promise.all([
       sbGet('movfisc',{'data':'gte.'+da,'order':'data.asc'}),
-      sbGet('movtav',{'order':'dataoracomanda.asc'}),
+      sbGet('movtav',{'dataoracomanda':'gte.'+da+'T00:00:00','order':'dataoracomanda.asc'}),
       sbGet('movpag',{'data':'gte.'+da,'order':'data.asc'}),
       sbGet('log_modifiche',{'order':'dataora.desc'}).catch(()=>[])
     ]);
     allMF=allMF.filter(r=>r.data>=da&&r.data<=a);
-    // movtav: no filtro data, mostra tutto lo storico piatti
+    allMT=allMT.filter(r=>{if(!r.dataoracomanda)return false;const d=r.dataoracomanda.split('T')[0];return d>=da&&d<=a;});
     allMP=allMP.filter(r=>r.data>=da&&r.data<=a);
     allLM=allLM.filter(r=>{if(!r.dataora)return false;const d=r.dataora.split('T')[0];return d>=da&&d<=a;});
     document.getElementById('syncInfo').textContent=new Date().toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
@@ -515,11 +515,13 @@ function renderPage(page){
   if(fn[page]) fn[page]();
 }
 
-function copertiPerServizio(movtav){
-  const n=movtav.filter(r=>r.tavolo>=1&&r.tavolo<=999);
-  const col=n.filter(r=>{const h=r.dataoracomanda?new Date(r.dataoracomanda).getHours():-1;return h>=5&&h<11;});
-  const pra=n.filter(r=>{const h=r.dataoracomanda?new Date(r.dataoracomanda).getHours():-1;return h>=11&&h<16;});
-  const cen=n.filter(r=>{const h=r.dataoracomanda?new Date(r.dataoracomanda).getHours():-1;return h>=16&&h<24;});
+function copertiPerServizio(){
+  // Legge da movfisc (canale='tavoli') usando il campo fascia già calcolato dallo script Python
+  // Un documento = un servizio al tavolo (proxy coperto)
+  const tavoli=allMF.filter(r=>r.canale==='tavoli');
+  const col=tavoli.filter(r=>r.fascia==='colazione');
+  const pra=tavoli.filter(r=>r.fascia==='pranzo');
+  const cen=tavoli.filter(r=>r.fascia==='cena');
   return{col,pra,cen};
 }
 
@@ -530,7 +532,7 @@ function renderHome(){
   const totP=allMF.filter(r=>r.tipo==='P').reduce((a,r)=>a+(r.totale||0),0);
   const totale=totS+totF+(showP?totP:0);
   const nDoc=mf.length;
-  const {col,pra,cen}=copertiPerServizio(allMT);
+  const {col,pra,cen}=copertiPerServizio();
   const totCop=col.length+pra.length+cen.length;
   const mediaC=totCop>0?totale/totCop:0;
   const mediaDoc=nDoc>0?totale/nDoc:0;
@@ -732,7 +734,7 @@ function renderConfronto(){
 
 function renderTavoli(){
   const mf=getMF();
-  const {col,pra,cen}=copertiPerServizio(allMT);
+  const {col,pra,cen}=copertiPerServizio();
   const totale=mf.reduce((a,r)=>a+(r.totale||0),0);
   const totC=col.length+pra.length+cen.length;
   document.getElementById('tavServGrid').innerHTML=`
