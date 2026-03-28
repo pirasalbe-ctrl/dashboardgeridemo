@@ -1410,17 +1410,12 @@ async function renderTavoliAperti(){
     return;
   }
 
-  // Separa tavoli fisici da asporti
-  const tavoliSala = aperti.filter(t => t.tipo === 'tavolo');
-  const tavoliAsporto = aperti.filter(t => t.tipo === 'asporto');
-  const totSala = tavoliSala.reduce((a,t)=>a+(t.totconto||0),0);
-  const totAsporto = tavoliAsporto.reduce((a,t)=>a+(t.totconto||0),0);
-  const totCoperti = tavoliSala.reduce((a,t)=>a+(t.coperti||0),0);
+  const totCoperti = aperti.reduce((a,t)=>a+(t.coperti||0),0);
+  const totaleAperti = aperti.reduce((a,t)=>a+(t.totconto||0),0);
 
   if (kpiEl) kpiEl.innerHTML = `
-    <div class="kpi green"><div class="label">Tavoli aperti</div><div class="value">${tavoliSala.length}</div><div class="sub">${totCoperti} coperti</div></div>
-    <div class="kpi blue"><div class="label">Da incassare sala</div><div class="value">${fmt(totSala)}</div></div>
-    ${tavoliAsporto.length ? `<div class="kpi amber"><div class="label">Asporti in attesa</div><div class="value">${tavoliAsporto.length}</div><div class="sub">${fmt(totAsporto)}</div></div>` : ''}
+    <div class="kpi green"><div class="label">Tavoli aperti</div><div class="value">${aperti.length}</div><div class="sub">${totCoperti} coperti</div></div>
+    <div class="kpi blue"><div class="label">Da incassare</div><div class="value">${fmt(totaleAperti)}</div></div>
     <div class="kpi"><div class="label">Aggiornato alle</div><div class="value">${now.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}</div><div class="sub">sync ogni 10 min</div></div>`;
 
   function calcolaDurata(ora) {
@@ -1435,38 +1430,20 @@ async function renderTavoliAperti(){
   }
 
   let html = '';
-  if (tavoliSala.length) {
-    html += '<div style="font-size:11px;font-weight:600;color:var(--text3);padding:8px 0 4px;">SALA</div>';
-    tavoliSala.sort((a,b)=>(a.posizione||'').localeCompare(b.posizione||'')).forEach(t => {
-      const oraStr = t.oraoccupaz ? t.oraoccupaz.substring(0,5) : '—';
-      const cop = t.coperti > 0 ? ` · 👥 ${t.coperti} coperti` : '';
-      html += `<div class="tav-card">
-        <div class="tav-num">${t.posizione}</div>
-        <div class="tav-info">
-          <div class="ti-time">Aperto alle <strong>${oraStr}</strong> · <span class="tav-durata">⏱ ${calcolaDurata(t.oraoccupaz)}</span></div>
-          <div class="ti-importo">${fmt(t.totconto||0)}</div>
-          <div class="ti-cam">${nomeCameriere(t.idcameriere)}${cop}</div>
-        </div>
-        <span class="tav-status aperto">● APERTO</span>
-      </div>`;
-    });
-  }
-  if (tavoliAsporto.length) {
-    html += '<div style="font-size:11px;font-weight:600;color:var(--text3);padding:12px 0 4px;">ASPORTI IN ATTESA</div>';
-    tavoliAsporto.forEach(t => {
-      const oraStr = t.oraoccupaz ? t.oraoccupaz.substring(0,5) : '—';
-      html += `<div class="tav-card" style="border-left:3px solid #ff9f0a;">
-        <div class="tav-num" style="color:#ff9f0a;font-size:22px;">🛵</div>
-        <div class="tav-info">
-          <div class="ti-time">In attesa dalle <strong>${oraStr}</strong> · <span class="tav-durata">⏱ ${calcolaDurata(t.oraoccupaz)}</span></div>
-          <div class="ti-importo">${fmt(t.totconto||0)}</div>
-          <div class="ti-cam">${nomeCameriere(t.idcameriere)}</div>
-        </div>
-        <span class="tav-status" style="background:#ff9f0a20;color:#ff9f0a;">● ASPORTO</span>
-      </div>`;
-    });
-  }
-  listEl.innerHTML = html;
+  aperti.sort((a,b)=>(a.posizione||'').localeCompare(b.posizione||'')).forEach(t => {
+    const oraStr = t.oraoccupaz ? t.oraoccupaz.substring(0,5) : '—';
+    const cop = t.coperti > 0 ? ` · 👥 ${t.coperti} cop.` : '';
+    html += `<div class="tav-card">
+      <div class="tav-num">${t.posizione}</div>
+      <div class="tav-info">
+        <div class="ti-time">Aperto alle <strong>${oraStr}</strong> · <span class="tav-durata">⏱ ${calcolaDurata(t.oraoccupaz)}</span></div>
+        <div class="ti-importo">${fmt(t.totconto||0)}</div>
+        <div class="ti-cam">${nomeCameriere(t.idcameriere)}${cop}</div>
+      </div>
+      <span class="tav-status aperto">● APERTO</span>
+    </div>`;
+  });
+  listEl.innerHTML = html || '<div class="empty" style="padding:30px;text-align:center;color:var(--text3)">🪑 Nessun tavolo aperto al momento</div>';
 }
 
 function renderAnomalie(){
