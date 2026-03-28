@@ -503,7 +503,7 @@ async function loadAll() {
 }
 
 function getMF(){ return showP ? allMF : allMF.filter(r=>r.tipo!=='P'); }
-function nomeCameriere(id){ const c=allCAM.find(r=>r.id===id); return c?c.nominativo:('Op. #'+(id||'?')); }
+function nomeCameriere(id){ const n=parseInt(id); const c=allCAM.find(r=>parseInt(r.id)===n); return c?c.nominativo:(n>0?'Op. #'+n:'Cassa'); }
 
 function renderCurrentPage(){
   const a=document.querySelector('.page.active');
@@ -767,7 +767,7 @@ function renderCamerieri(){
       </div>
     </div>`).join(''):'<div class="empty">Nessun dato</div>';
   if(sorted.length){
-    charts.cam=new Chart(document.getElementById('chartCam'),{type:'bar',indexAxis:'y',data:{labels:sorted.map(([id])=>'Op. #'+id),datasets:[{data:sorted.map(([,s])=>s.inc),backgroundColor:'#0071e3',borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}}});
+    charts.cam=new Chart(document.getElementById('chartCam'),{type:'bar',indexAxis:'y',data:{labels:sorted.map(([id])=>nomeCameriere(id)),datasets:[{data:sorted.map(([,s])=>s.inc),backgroundColor:'#0071e3',borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}}});
   }
 }
 
@@ -825,10 +825,10 @@ function renderAnomalie(){
     badge:tipoBadge[r.tipo]||'b-sconto',
     label:tipoLabel[r.tipo]||'MODIFICA',
     desc:(r.motivazione_descr?r.motivazione_descr+' — ':'')+'Tavolo '+(r.tavolo_numero||'?')+(r.qtastorno?' · Qta: '+r.qtastorno:'')+(r.valorestorno?' · €'+Math.abs(r.valorestorno):''),
-    meta:(r.dataora?new Date(r.dataora).toLocaleString('it-IT',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'')+(r.cameriere_id?' · Op. #'+r.cameriere_id:'')
+    meta:(r.dataora?new Date(r.dataora).toLocaleString('it-IT',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'')+(r.cameriere_id?' · '+nomeCameriere(r.cameriere_id):'')
   }));
 
-  const storniItems=storni.map(r=>({badge:'b-storno',label:'STORNO',desc:'Doc. negativo #'+r.numero+' — '+fmt(r.totale),meta:r.data+(r.idcameriere?' · Op. #'+r.idcameriere:'')}));
+  const storniItems=storni.map(r=>({badge:'b-storno',label:'STORNO',desc:'Doc. negativo #'+r.numero+' — '+fmt(r.totale),meta:r.data+(r.idcameriere?' · '+nomeCameriere(r.idcameriere):'')}));
 
   const all=[...logItems,...storniItems].slice(0,40);
   document.getElementById('anomalyList').innerHTML=all.length?all.map(a=>`
