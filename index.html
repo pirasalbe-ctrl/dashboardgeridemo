@@ -1393,23 +1393,6 @@ async function renderTavoliAperti(){
     return;
   }
 
-  const aperti = tavoli.filter(t => t.aperto);
-  const totaleAperti = aperti.reduce((a,t)=>a+(t.totconto||0),0);
-  const totaleGiorno = tavoli.reduce((a,t)=>a+(t.totincassato||0),0);
-
-  if (kpiEl) kpiEl.innerHTML = `
-    <div class="kpi green"><div class="label">Tavoli aperti ora</div><div class="value">${aperti.length}</div><div class="sub">di ${tavoli.length} totali</div></div>
-    <div class="kpi blue"><div class="label">Da incassare</div><div class="value">${fmt(totaleAperti)}</div></div>
-    <div class="kpi"><div class="label">Incassato oggi</div><div class="value">${fmt(totaleGiorno)}</div></div>
-    <div class="kpi amber"><div class="label">Aggiornato alle</div><div class="value">${now.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}</div><div class="sub">sync ogni 10 min</div></div>`;
-
-  if (!listEl) return;
-
-  if (!aperti.length) {
-    listEl.innerHTML = '<div class="empty" style="padding:30px;text-align:center;color:var(--text3);font-size:15px;">🪑 Nessun tavolo aperto al momento</div>';
-    return;
-  }
-
   const totCoperti = aperti.reduce((a,t)=>a+(t.coperti||0),0);
   const totaleAperti = aperti.reduce((a,t)=>a+(t.totconto||0),0);
 
