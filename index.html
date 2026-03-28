@@ -1375,53 +1375,69 @@ function renderDocumenti(){
 }
 
 async function renderTavoliAperti(){
-  // Legge i tavoli aperti da Supabase — sono i documenti MOVFISC di tipo P
-  // con DALLE recente e senza corrispondente chiusura (approssimazione: oggi)
-  const oggi = new Date().toISOString().split('T')[0];
-  let tavoliAperti = [];
+  const now = new Date();
+  const listEl = document.getElementById('tavoliApertiList');
+  const kpiEl = document.getElementById('kpiTavoliAperti');
+  if (listEl) listEl.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text3)">Caricamento...</div>';
+
+  // Legge tavoli_aperti da Supabase (sincronizzata ogni 10 min dallo script)
+  let tavoli = [];
   try {
-    // Prende movfisc di oggi con canale tavoli — rappresentano tavoli aperti/chiusi oggi
     const r = await fetch(
-      `${SB_URL}/rest/v1/movtav_live?select=*&order=dalle.desc`,
+      `${SB_URL}/rest/v1/tavoli_aperti?order=codice.asc`,
       { headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY } }
     );
-    if (r.ok) tavoliAperti = await r.json();
-  } catch(e) {}
-
-  // Fallback: usa movfisc di oggi come proxy tavoli aperti
-  if (!tavoliAperti.length) {
-    const mfOggi = allMF.filter(r => r.data === oggi && r.canale === 'tavoli' && r.tipo === 'P');
-    const now = new Date();
-    const kpiEl = document.getElementById('kpiTavoliAperti');
-    if (kpiEl) kpiEl.innerHTML = `
-      <div class="kpi green"><div class="label">Tavoli oggi</div><div class="value">${mfOggi.length}</div></div>
-      <div class="kpi blue"><div class="label">Incasso oggi</div><div class="value">${fmt(mfOggi.reduce((a,r)=>a+(r.totale||0),0))}</div></div>
-      <div class="kpi"><div class="label">Media tavolo</div><div class="value">${mfOggi.length>0?fmt(mfOggi.reduce((a,r)=>a+(r.totale||0),0)/mfOggi.length):'—'}</div></div>`;
-
-    const listEl = document.getElementById('tavoliApertiList');
-    if (!listEl) return;
-    if (!mfOggi.length) {
-      listEl.innerHTML = '<div class="empty" style="padding:20px;text-align:center;color:var(--text3)">Nessun tavolo aperto oggi</div>';
-      return;
-    }
-    listEl.innerHTML = mfOggi.sort((a,b)=>(b.ora||'').localeCompare(a.ora||'')).map(r => {
-      const oraAp = r.ora ? new Date(r.ora) : null;
-      const durMs = oraAp ? now - oraAp : 0;
-      const durMin = Math.floor(durMs / 60000);
-      const durStr = durMin > 60 ? Math.floor(durMin/60)+'h '+('0'+durMin%60).slice(-2)+'m' : durMin+'m';
-      const oraStr = oraAp ? oraAp.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'}) : '—';
-      return `<div class="tav-card">
-        <div class="tav-num">T${r.tavolo||r.camera||'?'}</div>
-        <div class="tav-info">
-          <div class="ti-time">Aperto alle ${oraStr} · <span class="tav-durata">${durStr}</span></div>
-          <div class="ti-importo">${fmt(r.totale||0)}</div>
-          <div class="ti-cam">${nomeCameriere(r.idcameriere)}</div>
-        </div>
-        <span class="tav-status aperto">APERTO</span>
-      </div>`;
-    }).join('');
+    if (r.ok) tavoli = await r.json();
+  } catch(e) {
+    if (listEl) listEl.innerHTML = '<div class="empty" style="padding:20px;text-align:center">Errore caricamento dati</div>';
     return;
   }
+
+  const aperti = tavoli.filter(t => t.aperto);
+  const totaleAperti = aperti.reduce((a,t)=>a+(t.totconto||0),0);
+  const totaleGiorno = tavoli.reduce((a,t)=>a+(t.totincassato||0),0);
+
+  if (kpiEl) kpiEl.innerHTML = `
+    <div class="kpi green"><div class="label">Tavoli aperti ora</div><div class="value">${aperti.length}</div><div class="sub">di ${tavoli.length} totali</div></div>
+    <div class="kpi blue"><div class="label">Da incassare</div><div class="value">${fmt(totaleAperti)}</div></div>
+    <div class="kpi"><div class="label">Incassato oggi</div><div class="value">${fmt(totaleGiorno)}</div></div>
+    <div class="kpi amber"><div class="label">Aggiornato alle</div><div class="value">${now.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}</div><div class="sub">sync ogni 10 min</div></div>`;
+
+  if (!listEl) return;
+
+  if (!aperti.length) {
+    listEl.innerHTML = '<div class="empty" style="padding:30px;text-align:center;color:var(--text3);font-size:15px;">🪑 Nessun tavolo aperto al momento</div>';
+    return;
+  }
+
+  listEl.innerHTML = aperti.map(t => {
+    // Calcola durata apertura
+    let durStr = '—';
+    if (t.oraoccupaz) {
+      // oraoccupaz è una stringa tipo "16:29:37.237"
+      const parts = t.oraoccupaz.split(':');
+      const oraAp = new Date();
+      oraAp.setHours(parseInt(parts[0])||0, parseInt(parts[1])||0, parseInt(parts[2])||0);
+      const durMs = now - oraAp;
+      if (durMs > 0) {
+        const durMin = Math.floor(durMs / 60000);
+        durStr = durMin >= 60
+          ? Math.floor(durMin/60)+'h '+('0'+durMin%60).slice(-2)+'m'
+          : durMin+'m';
+      }
+    }
+    const oraStr = t.oraoccupaz ? t.oraoccupaz.substring(0,5) : '—';
+    const zona = t.zona ? ` · ${t.zona}` : '';
+    return `<div class="tav-card">
+      <div class="tav-num">${t.posizione||t.codice}</div>
+      <div class="tav-info">
+        <div class="ti-time">Aperto alle <strong>${oraStr}</strong> · <span class="tav-durata">⏱ ${durStr}</span>${zona}</div>
+        <div class="ti-importo">${fmt(t.totconto||0)}</div>
+        <div class="ti-cam">${nomeCameriere(t.idcameriere)} · ${t.posti||'?'} posti</div>
+      </div>
+      <span class="tav-status aperto">● APERTO</span>
+    </div>`;
+  }).join('');
 }
 
 function renderAnomalie(){
