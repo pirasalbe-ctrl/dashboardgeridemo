@@ -1393,6 +1393,7 @@ async function renderTavoliAperti(){
     return;
   }
 
+  const aperti = tavoli.filter(t => t.aperto);
   const totCoperti = aperti.reduce((a,t)=>a+(t.coperti||0),0);
   const totaleAperti = aperti.reduce((a,t)=>a+(t.totconto||0),0);
 
