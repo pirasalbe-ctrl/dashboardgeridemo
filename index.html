@@ -557,7 +557,23 @@ body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--bg);
   <!-- ANOMALIE -->
   <div class="page" id="page-anomalie">
     <div class="kpi-grid" id="kpiAnomalie"></div>
-    <div class="card"><div class="card-title">Log operazioni</div><div id="anomalyList"></div></div>
+    <div class="card">
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+        <span>Log operazioni</span>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <div style="display:flex;gap:6px;">
+            <button class="cf-btn active" id="anomFiltAll" onclick="setAnomFilt('all',this)">Tutti</button>
+            <button class="cf-btn" id="anomFiltStorno" onclick="setAnomFilt('storno',this)">Storni</button>
+            <button class="cf-btn" id="anomFiltSconto" onclick="setAnomFilt('sconto',this)">Sconti</button>
+            <button class="cf-btn" id="anomFiltNeg" onclick="setAnomFilt('negativo',this)">Negativi</button>
+          </div>
+          <input id="anomSearch" type="text" placeholder="🔍 Cerca per parola chiave..." 
+            oninput="renderAnomalie()"
+            style="border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:13px;width:220px;background:var(--bg);color:var(--text1);outline:none;">
+        </div>
+      </div>
+      <div id="anomalyList" style="margin-top:12px;"></div>
+    </div>
   </div>
 
 </div>
@@ -1430,35 +1446,99 @@ async function renderTavoliAperti(){
   listEl.innerHTML = html || '<div class="empty" style="padding:30px;text-align:center;color:var(--text3)">🪑 Nessun tavolo aperto al momento</div>';
 }
 
+let anomFiltType = 'all';
+
+function setAnomFilt(type, btn) {
+  anomFiltType = type;
+  document.querySelectorAll('[id^="anomFilt"]').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderAnomalie();
+}
+
 function renderAnomalie(){
   const mf=getMF();
   const storni=mf.filter(r=>r.totale<0);
   const negativi=allMP.filter(r=>r.importo<0);
+  const scontiDoc=allMT.filter(r=>r.descrizione&&r.descrizione.toLowerCase().includes('sconto')&&r.prezzo<0);
 
-  // LOG_MODIFICHE: TIPO 1=storno, 2=cambio prezzo, 3=sconto, 4=cancellazione
   const tipoLabel={1:'STORNO',2:'CAMBIO PREZZO',3:'SCONTO',4:'ANNULL.'};
   const tipoBadge={1:'b-storno',2:'b-cambio',3:'b-sconto',4:'b-annull'};
 
   document.getElementById('kpiAnomalie').innerHTML=`
-    <div class="kpi red"><div class="label">Storni (doc neg.)</div><div class="value">${storni.length}</div><div class="sub">${fmt(Math.abs(storni.reduce((a,r)=>a+(r.totale||0),0)))}</div></div>
+    <div class="kpi red"><div class="label">Storni doc.</div><div class="value">${storni.length}</div><div class="sub">${fmt(Math.abs(storni.reduce((a,r)=>a+(r.totale||0),0)))}</div></div>
     <div class="kpi amber"><div class="label">Pagamenti neg.</div><div class="value">${negativi.length}</div></div>
+    <div class="kpi" style="border-top:3px solid #bf5af2"><div class="label">Sconti su righe</div><div class="value">${scontiDoc.length}</div></div>
     <div class="kpi blue"><div class="label">Log modifiche</div><div class="value">${allLM.length}</div></div>`;
 
-  const logItems=allLM.map(r=>({
-    badge:tipoBadge[r.tipo]||'b-sconto',
-    label:tipoLabel[r.tipo]||'MODIFICA',
-    desc:(r.motivazione_descr?r.motivazione_descr+' — ':'')+'Tavolo '+(r.tavolo_numero||'?')+(r.qtastorno?' · Qta: '+r.qtastorno:'')+(r.valorestorno?' · €'+Math.abs(r.valorestorno):''),
-    meta:(r.dataora?new Date(r.dataora).toLocaleString('it-IT',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'')+(r.cameriere_id?' · '+nomeCameriere(r.cameriere_id):'')
+  // Costruisce tutti gli items
+  const logItems = allLM.map(r=>({
+    tipo: 'modifica',
+    badge: tipoBadge[r.tipo]||'b-sconto',
+    label: tipoLabel[r.tipo]||'MODIFICA',
+    desc: (r.motivazione_descr?r.motivazione_descr+' — ':'')+'Tavolo '+(r.tavolo_numero||'?')+(r.qtastorno?' · Qta: '+r.qtastorno:'')+(r.valorestorno?' · €'+Math.abs(r.valorestorno):''),
+    meta: (r.dataora?new Date(r.dataora).toLocaleString('it-IT',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'')+(r.cameriere_id?' · '+nomeCameriere(r.cameriere_id):''),
+    ts: r.dataora||''
   }));
 
-  const storniItems=storni.map(r=>({badge:'b-storno',label:'STORNO',desc:'Doc. negativo #'+r.numero+' — '+fmt(r.totale),meta:r.data+(r.idcameriere?' · '+nomeCameriere(r.idcameriere):'')}));
+  const storniItems = storni.map(r=>({
+    tipo: 'storno',
+    badge: 'b-storno', label: 'STORNO',
+    desc: 'Doc. negativo #'+(r.numero||'?')+' — '+fmt(r.totale),
+    meta: (r.data||'')+(r.idcameriere?' · '+nomeCameriere(r.idcameriere):''),
+    ts: r.ora||r.data||''
+  }));
 
-  const all=[...logItems,...storniItems].slice(0,40);
-  document.getElementById('anomalyList').innerHTML=all.length?all.map(a=>`
+  const negativiItems = negativi.map(r=>({
+    tipo: 'negativo',
+    badge: 'b-storno', label: 'PAG. NEG.',
+    desc: (r.desc_pagamento||'Pagamento negativo')+' — '+fmt(r.importo),
+    meta: (r.data||'')+(r.idcameriere?' · '+nomeCameriere(r.idcameriere):''),
+    ts: r.data||''
+  }));
+
+  const scontiItems = scontiDoc.map(r=>({
+    tipo: 'sconto',
+    badge: 'b-sconto', label: 'SCONTO',
+    desc: (r.descrizione||'Sconto')+' — '+fmt(r.prezzo),
+    meta: (r.dataoracomanda?new Date(r.dataoracomanda).toLocaleString('it-IT',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'')+(r.idcameriere?' · '+nomeCameriere(r.idcameriere):''),
+    ts: r.dataoracomanda||''
+  }));
+
+  let all = [...logItems, ...storniItems, ...negativiItems, ...scontiItems];
+
+  // Applica filtro tipo
+  if (anomFiltType !== 'all') {
+    all = all.filter(a => a.tipo === anomFiltType);
+  }
+
+  // Applica filtro parola chiave
+  const kw = (document.getElementById('anomSearch')?.value||'').toLowerCase().trim();
+  if (kw) {
+    all = all.filter(a =>
+      (a.desc||'').toLowerCase().includes(kw) ||
+      (a.label||'').toLowerCase().includes(kw) ||
+      (a.meta||'').toLowerCase().includes(kw)
+    );
+  }
+
+  // Ordina per data decrescente
+  all.sort((a,b) => (b.ts||'').localeCompare(a.ts||''));
+
+  const listEl = document.getElementById('anomalyList');
+  if (!listEl) return;
+
+  if (!all.length) {
+    listEl.innerHTML = kw
+      ? `<div class="empty">Nessun risultato per "<strong>${kw}</strong>"</div>`
+      : '<div class="empty">Nessuna anomalia nel periodo</div>';
+    return;
+  }
+
+  listEl.innerHTML = all.slice(0,100).map(a=>`
     <div class="anom-row">
       <span class="anom-badge ${a.badge}">${a.label}</span>
       <div><div class="anom-desc">${a.desc}</div><div class="anom-meta">${a.meta}</div></div>
-    </div>`).join(''):'<div class="empty">Nessuna anomalia nel periodo</div>';
+    </div>`).join('');
 }
 
 function toggleP(){
