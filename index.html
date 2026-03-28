@@ -516,13 +516,16 @@ function renderPage(page){
 }
 
 function copertiPerServizio(){
-  // Legge da movfisc (canale='tavoli') usando il campo fascia già calcolato dallo script Python
-  // Un documento = un servizio al tavolo (proxy coperto)
-  const tavoli=allMF.filter(r=>r.canale==='tavoli');
-  const col=tavoli.filter(r=>r.fascia==='colazione');
-  const pra=tavoli.filter(r=>r.fascia==='pranzo');
-  const cen=tavoli.filter(r=>r.fascia==='cena');
-  return{col,pra,cen};
+  // I coperti reali vengono dalle righe LINEEMOVFISC con descrizione "Coperto colazione/pranzo/cena"
+  // La quantità di quella riga = numero coperti reali (es. "Coperto pranzo" qta 3 = 3 coperti)
+  // Filtra per data usando dataoracomanda che è già filtrato in allMT
+  const isCoperto = r => r.descrizione && r.descrizione.toLowerCase().includes('coperto');
+  const col = allMT.filter(r => isCoperto(r) && r.descrizione.toLowerCase().includes('colazione'));
+  const pra = allMT.filter(r => isCoperto(r) && r.descrizione.toLowerCase().includes('pranzo'));
+  const cen = allMT.filter(r => isCoperto(r) && r.descrizione.toLowerCase().includes('cena'));
+  // Somma le quantità (ogni riga coperto ha qta = numero persone)
+  const sumQ = arr => arr.reduce((a,r) => a + (r.quant||0), 0);
+  return{col, pra, cen, colN: sumQ(col), praN: sumQ(pra), cenN: sumQ(cen)};
 }
 
 function renderHome(){
@@ -532,8 +535,8 @@ function renderHome(){
   const totP=allMF.filter(r=>r.tipo==='P').reduce((a,r)=>a+(r.totale||0),0);
   const totale=totS+totF+(showP?totP:0);
   const nDoc=mf.length;
-  const {col,pra,cen}=copertiPerServizio();
-  const totCop=col.length+pra.length+cen.length;
+  const {col,pra,cen,colN,praN,cenN}=copertiPerServizio();
+  const totCop=colN+praN+cenN;
   const mediaC=totCop>0?totale/totCop:0;
   const mediaDoc=nDoc>0?totale/nDoc:0;
 
@@ -559,29 +562,29 @@ function renderHome(){
     </div>`;
 
   // Coperti per servizio con totale venduto
-  const totColaz = totale>0&&totCop>0 ? (col.length/totCop*totale) : 0;
-  const totPranzo = totale>0&&totCop>0 ? (pra.length/totCop*totale) : 0;
-  const totCena = totale>0&&totCop>0 ? (cen.length/totCop*totale) : 0;
+  const totColaz = totale>0&&totCop>0 ? (colN/totCop*totale) : 0;
+  const totPranzo = totale>0&&totCop>0 ? (praN/totCop*totale) : 0;
+  const totCena = totale>0&&totCop>0 ? (cenN/totCop*totale) : 0;
 
   document.getElementById('servizioGrid').innerHTML=`
     <div class="serv-card">
       <div class="s-icon">☀️</div>
       <div class="s-label">Colazione</div>
-      <div class="s-val">${col.length}</div>
+      <div class="s-val">${fmtN(colN)}</div>
       <div class="s-totale">${fmt(totColaz)}</div>
       <div class="s-sub">coperti</div>
     </div>
     <div class="serv-card">
       <div class="s-icon">🌤️</div>
       <div class="s-label">Pranzo</div>
-      <div class="s-val">${pra.length}</div>
+      <div class="s-val">${fmtN(praN)}</div>
       <div class="s-totale">${fmt(totPranzo)}</div>
       <div class="s-sub">coperti</div>
     </div>
     <div class="serv-card">
       <div class="s-icon">🌙</div>
       <div class="s-label">Cena</div>
-      <div class="s-val">${cen.length}</div>
+      <div class="s-val">${fmtN(cenN)}</div>
       <div class="s-totale">${fmt(totCena)}</div>
       <div class="s-sub">coperti</div>
     </div>`;
@@ -734,17 +737,17 @@ function renderConfronto(){
 
 function renderTavoli(){
   const mf=getMF();
-  const {col,pra,cen}=copertiPerServizio();
+  const {col,pra,cen,colN,praN,cenN}=copertiPerServizio();
   const totale=mf.reduce((a,r)=>a+(r.totale||0),0);
-  const totC=col.length+pra.length+cen.length;
+  const totC=colN+praN+cenN;
   document.getElementById('tavServGrid').innerHTML=`
-    <div class="serv-card"><div class="s-icon">☀️</div><div class="s-label">Colazione</div><div class="s-val">${col.length}</div><div class="s-totale">${fmt(totC>0?col.length/totC*totale:0)}</div><div class="s-sub">coperti</div></div>
-    <div class="serv-card"><div class="s-icon">🌤️</div><div class="s-label">Pranzo</div><div class="s-val">${pra.length}</div><div class="s-totale">${fmt(totC>0?pra.length/totC*totale:0)}</div><div class="s-sub">coperti</div></div>
-    <div class="serv-card"><div class="s-icon">🌙</div><div class="s-label">Cena</div><div class="s-val">${cen.length}</div><div class="s-totale">${fmt(totC>0?cen.length/totC*totale:0)}</div><div class="s-sub">coperti</div></div>`;
+    <div class="serv-card"><div class="s-icon">☀️</div><div class="s-label">Colazione</div><div class="s-val">${fmtN(colN)}</div><div class="s-totale">${fmt(totC>0?colN/totC*totale:0)}</div><div class="s-sub">coperti</div></div>
+    <div class="serv-card"><div class="s-icon">🌤️</div><div class="s-label">Pranzo</div><div class="s-val">${fmtN(praN)}</div><div class="s-totale">${fmt(totC>0?praN/totC*totale:0)}</div><div class="s-sub">coperti</div></div>
+    <div class="serv-card"><div class="s-icon">🌙</div><div class="s-label">Cena</div><div class="s-val">${fmtN(cenN)}</div><div class="s-totale">${fmt(totC>0?cenN/totC*totale:0)}</div><div class="s-sub">coperti</div></div>`;
   document.getElementById('kpiTavoli').innerHTML=`
     <div class="kpi"><div class="label">Tot. coperti</div><div class="value">${fmtN(totC)}</div></div>
     <div class="kpi blue"><div class="label">Media coperto</div><div class="value">${fmt(totC>0?totale/totC:0)}</div></div>`;
-  charts.tavoli=new Chart(document.getElementById('chartTavoli'),{type:'bar',data:{labels:['Colazione','Pranzo','Cena'],datasets:[{data:[col.length,pra.length,cen.length],backgroundColor:['#ff9f0a','#30d158','#0071e3'],borderRadius:8}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}}});
+  charts.tavoli=new Chart(document.getElementById('chartTavoli'),{type:'bar',data:{labels:['Colazione','Pranzo','Cena'],datasets:[{data:[colN,praN,cenN],backgroundColor:['#ff9f0a','#30d158','#0071e3'],borderRadius:8}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}}});
 }
 
 function renderCamerieri(){
