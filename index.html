@@ -243,6 +243,20 @@ body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--bg);
 .cam-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--border); }
 .cam-row:last-child { border-bottom: none; }
 .cam-name { font-size: 14px; font-weight: 500; }
+.meteo-bar { display:flex; align-items:center; gap:6px; font-size:13px; color:var(--text2); margin-bottom:14px; padding:8px 12px; background:var(--card); border-radius:10px; flex-wrap:wrap; }
+.meteo-day { display:flex; align-items:center; gap:4px; padding:4px 8px; border-radius:8px; background:var(--bg); font-size:12px; white-space:nowrap; }
+.meteo-day .m-icon { font-size:16px; }
+.meteo-day .m-temp { font-weight:600; color:var(--text1); }
+.meteo-day .m-date { color:var(--text3); font-size:11px; }
+.meteo-setup { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.meteo-setup input { border:1px solid var(--border); border-radius:8px; padding:4px 8px; font-size:12px; width:100px; background:var(--bg); color:var(--text1); }
+.meteo-setup button { font-size:12px; padding:4px 10px; border-radius:8px; background:var(--accent); color:#fff; border:none; cursor:pointer; }
+.confronto-table { width:100%; border-collapse:collapse; font-size:13px; }
+.confronto-table th { text-align:left; padding:8px; color:var(--text3); font-weight:500; border-bottom:1px solid var(--border); }
+.confronto-table td { padding:8px; border-bottom:1px solid var(--border); }
+.confronto-table tr:last-child td { border-bottom:none; }
+.delta-pos { color:#30d158; font-weight:600; }
+.delta-neg { color:#ff3b30; font-weight:600; }
 .cam-stats { display: flex; gap: 18px; }
 .cam-stat .v { font-size: 13px; font-weight: 600; text-align: right; font-family: 'DM Mono', monospace; }
 .cam-stat .l { font-size: 10px; color: var(--text3); text-align: right; text-transform: uppercase; letter-spacing: 0.4px; }
@@ -403,7 +417,10 @@ body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--bg);
   <!-- CONFRONTO -->
   <div class="page" id="page-confronto">
     <div class="kpi-grid" id="kpiConfronto"></div>
+    <div class="card" id="meteoSetupCard" style="margin-bottom:12px;"></div>
+    <div class="card"><div class="card-title">Meteo per giorno</div><div id="meteoDayBar" class="meteo-bar" style="flex-wrap:wrap;gap:6px;"></div></div>
     <div class="card"><div class="card-title">Settimana corrente vs precedente</div><div class="chart-wrap" style="height:240px;"><canvas id="chartConfronto"></canvas></div></div>
+    <div class="card"><div class="card-title">Dettaglio giornaliero</div><div id="confrontoTable"></div></div>
   </div>
 
   <!-- TAVOLI -->
@@ -503,6 +520,96 @@ async function loadAll() {
 }
 
 function getMF(){ return showP ? allMF : allMF.filter(r=>r.tipo!=='P'); }
+
+// ── METEO ──────────────────────────────────────────────────────────────────
+let meteoCache = {}; // {data: {tmax, tmin, prec, wmo}}
+let meteoCords = JSON.parse(localStorage.getItem('meteoCords')||'null');
+
+const WMO_ICON = {
+  0:'☀️',1:'🌤️',2:'⛅',3:'☁️',
+  45:'🌫️',48:'🌫️',
+  51:'🌦️',53:'🌦️',55:'🌧️',
+  61:'🌧️',63:'🌧️',65:'🌧️',
+  71:'❄️',73:'❄️',75:'❄️',
+  80:'🌦️',81:'🌧️',82:'⛈️',
+  95:'⛈️',96:'⛈️',99:'⛈️'
+};
+const WMO_DESC = {
+  0:'Sereno',1:'Poco nuvoloso',2:'Parzialmente nuvoloso',3:'Coperto',
+  45:'Nebbia',48:'Nebbia',51:'Pioggerella',53:'Pioggerella',55:'Pioggerella',
+  61:'Pioggia',63:'Pioggia',65:'Pioggia intensa',
+  71:'Neve',73:'Neve',75:'Neve intensa',
+  80:'Rovesci',81:'Rovesci',82:'Rovesci forti',
+  95:'Temporale',96:'Temporale',99:'Temporale'
+};
+
+function meteoIcon(wmo){ return WMO_ICON[wmo]||'🌡️'; }
+function meteoDesc(wmo){ return WMO_DESC[wmo]||''; }
+
+async function fetchMeteo(da, a) {
+  if (!meteoCords) return {};
+  const {lat, lon} = meteoCords;
+  const cacheKey = da+'_'+a;
+  if (meteoCache[cacheKey]) return meteoCache[cacheKey];
+  try {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weathercode&timezone=Europe%2FRome&start_date=${da}&end_date=${a}`;
+    const r = await fetch(url);
+    const d = await r.json();
+    const result = {};
+    if (d.daily && d.daily.time) {
+      d.daily.time.forEach((date, i) => {
+        result[date] = {
+          tmax: Math.round(d.daily.temperature_2m_max[i]),
+          tmin: Math.round(d.daily.temperature_2m_min[i]),
+          prec: d.daily.precipitation_sum[i],
+          wmo:  d.daily.weathercode[i]
+        };
+      });
+    }
+    meteoCache[cacheKey] = result;
+    return result;
+  } catch(e) { return {}; }
+}
+
+function renderMeteoSetup(containerId) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  if (meteoCords) {
+    el.innerHTML = `<div class="meteo-setup"><span style="font-size:12px;color:var(--text3)">📍 ${meteoCords.label||meteoCords.lat+','+meteoCords.lon}</span> <button onclick="resetMeteo()">Cambia</button></div>`;
+  } else {
+    el.innerHTML = `<div class="meteo-setup">
+      <span style="font-size:12px;color:var(--text3)">📍 Inserisci città per dati meteo:</span>
+      <input id="meteoCity" placeholder="es. Prato" />
+      <button onclick="cercaCittaMeteo()">Cerca</button>
+    </div>`;
+  }
+}
+
+async function cercaCittaMeteo() {
+  const city = document.getElementById('meteoCity').value.trim();
+  if (!city) return;
+  try {
+    const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=it`);
+    const d = await r.json();
+    if (d.results && d.results[0]) {
+      const res = d.results[0];
+      meteoCords = {lat: res.latitude, lon: res.longitude, label: res.name+', '+res.country};
+      localStorage.setItem('meteoCords', JSON.stringify(meteoCords));
+      meteoCache = {};
+      renderCurrentPage();
+    } else {
+      alert('Città non trovata, riprova');
+    }
+  } catch(e) { alert('Errore ricerca: '+e.message); }
+}
+
+function resetMeteo() {
+  meteoCords = null;
+  localStorage.removeItem('meteoCords');
+  meteoCache = {};
+  renderCurrentPage();
+}
+// ────────────────────────────────────────────────────────────────────────────
 function nomeCameriere(id){ const n=parseInt(id); const c=allCAM.find(r=>parseInt(r.id)===n); return c?c.nominativo:(n>0?'Op. #'+n:'Cassa'); }
 
 function renderCurrentPage(){
@@ -717,21 +824,81 @@ function renderFasce(){
   document.getElementById('piccoCSub').textContent=pc?pc[1]+' documenti':'';
 }
 
-function renderConfronto(){
+async function renderConfronto(){
   const oggi=new Date(), fd=d=>d.toISOString().split('T')[0];
+  const{da,a}=getRange();
+
+  // Genera lista giorni nel range selezionato
   const giorni=[];
-  for(let i=6;i>=0;i--){const d=new Date(oggi);d.setDate(oggi.getDate()-i);giorni.push(fd(d));}
+  const dStart=new Date(da), dEnd=new Date(a);
+  for(let d=new Date(dStart);d<=dEnd;d.setDate(d.getDate()+1)) giorni.push(fd(new Date(d)));
+
   const mf=getMF();
   const corrente=giorni.map(g=>mf.filter(r=>r.data===g).reduce((a,r)=>a+(r.totale||0),0));
   const giorniP=giorni.map(g=>{const d=new Date(g);d.setDate(d.getDate()-7);return fd(d);});
-  const precedente=giorniP.map(g=>mf.filter(r=>r.data===g).reduce((a,r)=>a+(r.totale||0),0));
+  const precedente=giorniP.map(g=>allMF.filter(r=>r.data===g).reduce((a,r)=>a+(r.totale||0),0));
   const totC=corrente.reduce((a,v)=>a+v,0);
   const totP=precedente.reduce((a,v)=>a+v,0);
   const delta=totP>0?Math.round((totC-totP)/totP*100):0;
+
   document.getElementById('kpiConfronto').innerHTML=`
-    <div class="kpi green"><div class="label">Questa settimana</div><div class="value">${fmt(totC)}</div><div class="sub">${delta>=0?'+':''}${delta}% vs prec.</div></div>
-    <div class="kpi"><div class="label">Settimana scorsa</div><div class="value">${fmt(totP)}</div></div>`;
-  charts.confronto=new Chart(document.getElementById('chartConfronto'),{type:'line',data:{labels:['Lun','Mar','Mer','Gio','Ven','Sab','Dom'],datasets:[
+    <div class="kpi green"><div class="label">Periodo selezionato</div><div class="value">${fmt(totC)}</div><div class="sub">${delta>=0?'+':''}${delta}% vs stesso periodo prec.</div></div>
+    <div class="kpi"><div class="label">Periodo precedente</div><div class="value">${fmt(totP)}</div></div>`;
+
+  // Setup meteo
+  renderMeteoSetup('meteoSetupCard');
+
+  // Fetch meteo per il periodo
+  const meteo = await fetchMeteo(da, a);
+
+  // Barra meteo giornaliera
+  const GIORNI_IT=['Dom','Lun','Mar','Mer','Gio','Ven','Sab'];
+  const meteoDayBar = document.getElementById('meteoDayBar');
+  if (Object.keys(meteo).length === 0) {
+    meteoDayBar.innerHTML = '<span style="color:var(--text3);font-size:12px;">Inserisci la città per vedere il meteo</span>';
+  } else {
+    meteoDayBar.innerHTML = giorni.map(g => {
+      const m = meteo[g];
+      if (!m) return '';
+      const d = new Date(g+'T12:00:00');
+      const label = GIORNI_IT[d.getDay()]+' '+d.getDate()+'/'+('0'+(d.getMonth()+1)).slice(-2);
+      return `<div class="meteo-day">
+        <span class="m-icon">${meteoIcon(m.wmo)}</span>
+        <span><div class="m-date">${label}</div><div class="m-temp">${m.tmax}° <span style="color:var(--text3);font-weight:400">${m.tmin}°</span></div></span>
+        ${m.prec>0?`<span style="color:#0071e3;font-size:11px">💧${m.prec}mm</span>`:''}
+      </div>`;
+    }).join('');
+  }
+
+  // Tabella dettaglio giornaliero con meteo
+  const tableRows = giorni.map(g => {
+    const incC = mf.filter(r=>r.data===g).reduce((a,r)=>a+(r.totale||0),0);
+    const gP = fd(new Date(new Date(g).setDate(new Date(g).getDate()-7)));
+    const incP = allMF.filter(r=>r.data===gP).reduce((a,r)=>a+(r.totale||0),0);
+    const dlt = incP>0?Math.round((incC-incP)/incP*100):null;
+    const m = meteo[g];
+    const d = new Date(g+'T12:00:00');
+    const label = GIORNI_IT[d.getDay()]+' '+d.getDate()+'/'+('0'+(d.getMonth()+1)).slice(-2);
+    return `<tr>
+      <td><strong>${label}</strong></td>
+      <td>${m?meteoIcon(m.wmo)+' '+m.tmax+'°/'+m.tmin()+'° '+meteoDesc(m.wmo):'—'}</td>
+      <td>${fmt(incC)}</td>
+      <td>${fmt(incP)}</td>
+      <td>${dlt!==null?`<span class="${dlt>=0?'delta-pos':'delta-neg'}">${dlt>=0?'+':''}${dlt}%</span>`:'—'}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('confrontoTable').innerHTML = `<table class="confronto-table">
+    <thead><tr><th>Giorno</th><th>Meteo</th><th>Incasso</th><th>vs anno prec.</th><th>Δ%</th></tr></thead>
+    <tbody>${tableRows}</tbody>
+  </table>`;
+
+  // Grafico
+  const labelGiorni = giorni.map(g=>{
+    const d=new Date(g+'T12:00:00');
+    return GIORNI_IT[d.getDay()]+' '+d.getDate();
+  });
+  charts.confronto=new Chart(document.getElementById('chartConfronto'),{type:'line',data:{labels:labelGiorni,datasets:[
     {label:'Corrente',data:corrente,borderColor:'#30d158',backgroundColor:'rgba(48,209,88,0.08)',fill:true,tension:0.4,borderWidth:2.5,pointRadius:3,pointBackgroundColor:'#30d158'},
     {label:'Precedente',data:precedente,borderColor:'#aeaeb2',backgroundColor:'transparent',fill:false,tension:0.4,borderWidth:1.5,pointRadius:2,borderDash:[5,4]}
   ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}}});
