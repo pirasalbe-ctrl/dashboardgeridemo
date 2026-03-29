@@ -1008,16 +1008,18 @@ function setVendPiattiSort(by, btn) {
 
 function renderVendPiatti(canale){
   const rows=(canale==='tutti'?allMT:allMT.filter(r=>r.canale===canale))
-    .filter(r=>r.descrizione&&!r.descrizione.startsWith('(V)'));
+    .filter(r=>r.descrizione);
+  const isVar = n => n.startsWith('(V)') || n.startsWith('(v)');
   const cnt={}, val={};
   rows.forEach(r=>{
     const k=r.descrizione||'?';
     cnt[k]=(cnt[k]||0)+(r.quant||1);
     val[k]=(val[k]||0)+((r.quant||1)*(r.prezzo||0));
   });
-  const sorted = vendPiattiSortBy==='val'
-    ? Object.entries(val).sort((a,b)=>b[1]-a[1]).slice(0,12)
-    : Object.entries(cnt).sort((a,b)=>b[1]-a[1]).slice(0,12);
+  const sfn = (a,b)=>b[1]-a[1];
+  const normaliV = Object.entries(vendPiattiSortBy==='val'?val:cnt).filter(([n])=>!isVar(n)).sort(sfn).slice(0,12);
+  const variantiV = Object.entries(vendPiattiSortBy==='val'?val:cnt).filter(([n])=>isVar(n)).sort(sfn);
+  const sorted = [...normaliV, ...variantiV];
   const color=canale==='tutti'?'#30d158':(CCOLORS[canale]||'#30d158');
   const maxV = sorted[0]?.[1]||1;
   
@@ -1079,16 +1081,22 @@ function renderPiatti(){
   const cnt={}, val={};
   allMT.forEach(r=>{
     const k=r.descrizione||'?';
-    // Escludi varianti (descrizioni che iniziano con (V) o simili)
-    if(k.startsWith('(V)') || k.startsWith('(v)')) return;
     cnt[k]=(cnt[k]||0)+(r.quant||1);
     val[k]=(val[k]||0)+((r.quant||1)*(r.prezzo||0));
   });
   
-  // Ordina per pezzi o valore
-  const sorted = piattiSortBy === 'val'
-    ? Object.entries(val).sort((a,b)=>b[1]-a[1]).slice(0,15)
-    : Object.entries(cnt).sort((a,b)=>b[1]-a[1]).slice(0,15);
+  const isVariante = n => n.startsWith('(V)') || n.startsWith('(v)');
+  
+  // Ordina: prima i piatti normali, poi le varianti in fondo
+  const sortFn = piattiSortBy === 'val'
+    ? (a,b) => b[1]-a[1]
+    : (a,b) => b[1]-a[1];
+  
+  const normali = Object.entries(piattiSortBy==='val'?val:cnt)
+    .filter(([n])=>!isVariante(n)).sort(sortFn).slice(0,15);
+  const varianti = Object.entries(piattiSortBy==='val'?val:cnt)
+    .filter(([n])=>isVariante(n)).sort(sortFn);
+  const sorted = [...normali, ...varianti];
   
   const maxVal = piattiSortBy === 'val' 
     ? (sorted[0]?.[1]||1)
@@ -1120,7 +1128,7 @@ function renderPiatti(){
     }).join('') : '<div class="empty">Nessun dato</div>';
   }
 
-  const top6=Object.entries(cnt).filter(([n])=>!n.startsWith('(V)')).sort((a,b)=>b[1]-a[1]).slice(0,6);
+  const top6=Object.entries(cnt).sort((a,b)=>b[1]-a[1]).filter(([n])=>!isVariante(n)).slice(0,6);
   const ctxCat = document.getElementById('chartCat');
   if(ctxCat) charts.cat=new Chart(ctxCat,{type:'doughnut',data:{labels:top6.map(c=>c[0]),datasets:[{data:top6.map(c=>c[1]),backgroundColor:PAL}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}}});
 }
