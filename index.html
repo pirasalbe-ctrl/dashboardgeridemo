@@ -427,7 +427,11 @@ body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--bg);
   <div class="page" id="page-piatti">
     <div id="annoCfr_page_piatti"></div>
     <div class="card"><div class="card-title">Più venduti</div><div id="piattiList"></div></div>
-    <div class="card"><div class="card-title">Per piatto (top 6)</div><div class="chart-wrap" style="height:210px;"><canvas id="chartCat"></canvas></div></div>
+    <div class="card">
+      <div class="card-title">Statistiche per categoria</div>
+      <div id="catStats"></div>
+    </div>
+    <div class="card"><div class="card-title">Top categorie</div><div class="chart-wrap" style="height:210px;"><canvas id="chartCat"></canvas></div></div>
   </div>
 
   <!-- FASCE -->
@@ -697,7 +701,7 @@ function getDaysShifted(da, a) {
   while(d<=end){ days.push(d.toISOString().split('T')[0]); d.setDate(d.getDate()+1); }
   return days;
 }
-let allMF=[], allMT=[], allMP=[], allLM=[], allCAM=[], allAN=[];
+let allMF=[], allMT=[], allMP=[], allLM=[], allCAM=[], allAN=[], allCAT=[];
 let charts={};
 
 const fmt = v => '€'+Number(v||0).toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -726,12 +730,13 @@ async function loadAll() {
   document.getElementById('syncInfo').textContent='...';
   const{da,a}=getRange();
   try {
-    [allMF,allMT,allMP,allLM,allCAM,allAN] = await Promise.all([
+    [allMF,allMT,allMP,allLM,allCAM,allAN,allCAT] = await Promise.all([
       sbGet('movfisc',{'data':'gte.'+da,'order':'data.asc'}),
       sbGet('movtav',{'dataoracomanda':'gte.'+da+'T00:00:00','order':'dataoracomanda.asc'}),
       sbGet('movpag',{'data':'gte.'+da,'order':'data.asc'}),
       sbGet('log_modifiche',{'order':'dataora.desc'}).catch(()=>[]),
-      sbGet('anomalie',{'data':'gte.'+da,'order':'dataora.desc'}).catch(()=>[]),
+      sbGet('anomalie',{'data':'gte.'+da,'order':'dataora.desc'}).catch(()=[]),
+      sbGet('categorie',{'order':'pezzi.desc'}).catch(()=>[]),
       sbGet('camerieri',{'order':'id.asc'}).catch(()=>[])
     ]);
     allMF=allMF.filter(r=>r.data>=da&&r.data<=a);
@@ -1131,6 +1136,74 @@ function renderPiatti(){
   const top6=Object.entries(cnt).sort((a,b)=>b[1]-a[1]).filter(([n])=>!isVariante(n)).slice(0,6);
   const ctxCat = document.getElementById('chartCat');
   if(ctxCat) charts.cat=new Chart(ctxCat,{type:'doughnut',data:{labels:top6.map(c=>c[0]),datasets:[{data:top6.map(c=>c[1]),backgroundColor:PAL}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}}});
+
+  // Statistiche categorie da Supabase
+  const catEl = document.getElementById('catStats');
+  if (catEl) {
+    // Calcola categorie dal periodo corrente usando allMT
+    const catMap = {};
+    allMT.forEach(r => {
+      if (!r.categoria) return;
+      if (!catMap[r.categoria]) catMap[r.categoria] = {pz:0, val:0};
+      catMap[r.categoria].pz += (r.quant||1);
+      catMap[r.categoria].val += (r.quant||1)*(r.prezzo||0);
+    });
+    const catSorted = Object.entries(catMap).sort((a,b)=>b[1].pz-a[1].pz);
+    const totPz = catSorted.reduce((a,[,v])=>a+v.pz,0)||1;
+    const totVal = catSorted.reduce((a,[,v])=>a+v.val,0)||1;
+    
+    if (catSorted.length) {
+      catEl.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead><tr style="border-bottom:2px solid var(--border);">
+          <th style="text-align:left;padding:6px 8px;color:var(--text3)">Categoria</th>
+          <th style="text-align:right;padding:6px 8px;color:var(--text3)">Pezzi</th>
+          <th style="text-align:right;padding:6px 8px;color:var(--text3)">%</th>
+          <th style="text-align:right;padding:6px 8px;color:var(--text3)">Valore €</th>
+          <th style="text-align:right;padding:6px 8px;color:var(--text3)">%</th>
+        </tr></thead>
+        <tbody>${catSorted.map(([cat,v],i)=>`
+          <tr style="border-bottom:1px solid var(--border);${i%2===0?'background:var(--bg);':''}">
+            <td style="padding:6px 8px;font-weight:500">${cat}</td>
+            <td style="padding:6px 8px;text-align:right">${Math.round(v.pz)}</td>
+            <td style="padding:6px 8px;text-align:right;color:var(--text3)">${(v.pz/totPz*100).toFixed(1)}%</td>
+            <td style="padding:6px 8px;text-align:right">${fmt(v.val)}</td>
+            <td style="padding:6px 8px;text-align:right;color:var(--text3)">${(v.val/totVal*100).toFixed(1)}%</td>
+          </tr>`).join('')}
+        </tbody>
+        <tfoot><tr style="border-top:2px solid var(--border);font-weight:600;">
+          <td style="padding:6px 8px">Totale</td>
+          <td style="padding:6px 8px;text-align:right">${Math.round(totPz)}</td>
+          <td style="padding:6px 8px;text-align:right;color:var(--text3)">100%</td>
+          <td style="padding:6px 8px;text-align:right">${fmt(totVal)}</td>
+          <td style="padding:6px 8px;text-align:right;color:var(--text3)">100%</td>
+        </tr></tfoot>
+      </table>`;
+    } else if (allCAT.length) {
+      // Fallback: usa dati storici da Supabase
+      const totPzS = allCAT.reduce((a,r)=>a+(r.pezzi||0),0)||1;
+      const totValS = allCAT.reduce((a,r)=>a+(r.valore||0),0)||1;
+      catEl.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead><tr style="border-bottom:2px solid var(--border);">
+          <th style="text-align:left;padding:6px 8px;color:var(--text3)">Categoria</th>
+          <th style="text-align:right;padding:6px 8px;color:var(--text3)">Pezzi</th>
+          <th style="text-align:right;padding:6px 8px;color:var(--text3)">%</th>
+          <th style="text-align:right;padding:6px 8px;color:var(--text3)">Valore €</th>
+          <th style="text-align:right;padding:6px 8px;color:var(--text3)">%</th>
+        </tr></thead>
+        <tbody>${allCAT.map((r,i)=>`
+          <tr style="border-bottom:1px solid var(--border);${i%2===0?'background:var(--bg);':''}">
+            <td style="padding:6px 8px;font-weight:500">${r.categoria}</td>
+            <td style="padding:6px 8px;text-align:right">${Math.round(r.pezzi||0)}</td>
+            <td style="padding:6px 8px;text-align:right;color:var(--text3)">${((r.pezzi||0)/totPzS*100).toFixed(1)}%</td>
+            <td style="padding:6px 8px;text-align:right">${fmt(r.valore||0)}</td>
+            <td style="padding:6px 8px;text-align:right;color:var(--text3)">${((r.valore||0)/totValS*100).toFixed(1)}%</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`;
+    } else {
+      catEl.innerHTML = '<div class="empty">Nessun dato categorie disponibile</div>';
+    }
+  }
 }
 
 function renderFasce(){
