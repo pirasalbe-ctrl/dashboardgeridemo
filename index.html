@@ -399,11 +399,9 @@ body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--bg);
   <button class="nav-btn active" onclick="goPage('home',this)">Home</button>
   <button class="nav-btn" onclick="goPage('venduto',this)">Venduto</button>
   <button class="nav-btn" onclick="goPage('piatti',this)">Piatti</button>
-  <button class="nav-btn" onclick="goPage('fasce',this)">Fasce</button>
   <button class="nav-btn" onclick="goPage('confronto',this)">Confronto</button>
   <button class="nav-btn" onclick="goPage('tavoli',this)">Tavoli</button>
   <button class="nav-btn" onclick="goPage('camerieri',this)">Camerieri</button>
-  <button class="nav-btn" onclick="goPage('pagamenti',this)">Pagamenti</button>
   <button class="nav-btn" onclick="goPage('documenti',this)">Documenti</button>
   <button class="nav-btn" onclick="goPage('anomalie',this)">Anomalie</button>
   <button class="nav-btn" onclick="goPage('tavoliaperti',this)">🟢 Tavoli aperti</button>
@@ -800,9 +798,13 @@ function getRange() {
 async function loadAll() {
   document.getElementById('syncInfo').textContent='...';
   const{da,a}=getRange();
+  // Per il confronto carichiamo sempre almeno 35 giorni di movfisc
+  const t=new Date(); const fd=d=>d.toISOString().split('T')[0];
+  const da35=fd(new Date(t.getFullYear(),t.getMonth(),t.getDate()-35));
+  const daMin=da<da35?da:da35;
   try {
     [allMF,allMT,allMP,allLM,allAN,allCAT,allCAM] = await Promise.all([
-      sbGet('movfisc',{'data':'gte.'+da,'order':'data.asc'}),
+      sbGet('movfisc',{'data':'gte.'+daMin,'order':'data.asc'}),
       sbGet('movtav',{'dataoracomanda':'gte.'+da+'T00:00:00','order':'dataoracomanda.asc'}),
       sbGet('movpag',{'data':'gte.'+da,'order':'data.asc'}),
       sbGet('log_modifiche',{'order':'dataora.desc'}).catch(()=>[]),
@@ -810,7 +812,8 @@ async function loadAll() {
       sbGet('categorie',{'order':'pezzi.desc'}).catch(()=>[]),
       sbGet('camerieri',{'order':'id.asc'}).catch(()=>[])
     ]);
-    allMF=allMF.filter(r=>r.data>=da&&r.data<=a);
+    // allMF contiene 35gg — non filtriamo qui, getMF() applica il filtro periodo
+    // allMT, allMP, allAN filtrati sul periodo selezionato
     allMT=allMT.filter(r=>{if(!r.dataoracomanda)return false;const d=r.dataoracomanda.split('T')[0];return d>=da&&d<=a;});
     allMP=allMP.filter(r=>r.data>=da&&r.data<=a);
     allLM=allLM.filter(r=>{if(!r.dataora)return false;const d=r.dataora.split('T')[0];return d>=da&&d<=a;});
@@ -864,7 +867,8 @@ function filterByOra(records) {
 }
 
 function getMF() {
-  const base = showP ? allMF : allMF.filter(r=>r.tipo!=='P');
+  const{da,a}=getRange();
+  const base = (showP ? allMF : allMF.filter(r=>r.tipo!=='P')).filter(r=>r.data>=da&&r.data<=a);
   return filterByOra(base);
 }
 
@@ -971,7 +975,7 @@ function renderCurrentPage(){
 function renderPage(page){
   Object.values(charts).forEach(c=>{try{c.destroy();}catch(e){}});
   charts={};
-  const fn={home:renderHome,venduto:renderVenduto,piatti:renderPiatti,fasce:renderFasce,confronto:renderConfronto,tavoli:renderTavoli,camerieri:renderCamerieri,pagamenti:renderPagamenti,documenti:renderDocumenti,anomalie:renderAnomalie,tavoliaperti:renderTavoliAperti};
+  const fn={home:renderHome,venduto:renderVenduto,piatti:renderPiatti,confronto:renderConfronto,tavoli:renderTavoli,camerieri:renderCamerieri,documenti:renderDocumenti,anomalie:renderAnomalie,tavoliaperti:renderTavoliAperti};
   if(fn[page]) fn[page]();
 }
 
