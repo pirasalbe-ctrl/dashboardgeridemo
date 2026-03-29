@@ -340,8 +340,8 @@ body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--bg);
     <h1>Gerì</h1>
     <span class="sync-badge" id="syncInfo">...</span>
   </div>
-  <div class="toggle-p" onclick="toggleP()">
-    <div class="sw" id="swP"></div>
+  <div class="toggle-p" onclick="toggleP()" style="opacity:1">
+    <div class="sw active" id="swP"></div>
     <span id="plabel">Conti P</span>
   </div>
 </div>
@@ -581,10 +581,10 @@ body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--bg);
 <script>
 const SB_URL = "https://rykmnurlyqgvamacrqun.supabase.co";
 const SB_KEY = "sb_publishable_78f791A8-iKXHfEDYxD9mA_urytx9FR";
-const CCOLORS = { tavoli:'#30d158', immediato:'#0071e3', asporto:'#ff9f0a', domicilio:'#ff3b30' };
+const CCOLORS = { tavoli:'#30d158', immediato:'#0071e3', asporto:'#ff9f0a', domicilio:'#ff3b30', fattura:'#bf5af2' };
 const PAL = ['#30d158','#0071e3','#ff9f0a','#ff3b30','#bf5af2','#ac8e68','#636366'];
 
-let showP=false, curFilter='oggi', curVendCanale='tutti';
+let showP=true, curFilter='oggi', curVendCanale='tutti';
 let activeAnni = [new Date().getFullYear()]; // anni selezionati globalmente
 const ANNO_COLORS = ['#30d158','#0071e3','#ff9f0a']; // verde, blu, arancio
 
@@ -967,11 +967,13 @@ function renderHome(){
 
 function renderVenduto(){
   renderAnnoCfrBar('annoCfr_page_venduto');
-  const mf=getMF();
-  const canali=['tavoli','immediato','asporto','domicilio'];
-  const cLabels=['Tavoli','Conto immediato','Asporto','Domicilio'];
-  const cSub=['Tavoli 1–999','Tavoli 1001–1020','Tavoli negativi','Negativi + consegna'];
-  const cIcon=['🪑','⚡','🛍️','🛵'];
+  // Per i canali usiamo sempre allMF (inclusi P) per avere il quadro completo
+  const mfAll=allMF;
+  const mf=mfAll;
+  const canali=['tavoli','immediato','asporto','domicilio','fattura'];
+  const cLabels=['Tavoli','Conto immediato','Asporto','Domicilio','Fatture'];
+  const cSub=['Tavoli numerati','Banco/Cassa rapida','Ritiro asporto','Consegna a domicilio','Fatture emesse'];
+  const cIcon=['🪑','⚡','🛍️','🛵','🧾'];
   const stats=canali.map(c=>{
     const rows=mf.filter(r=>r.canale===c);
     const val=rows.reduce((a,r)=>a+(r.totale||0),0);
@@ -995,15 +997,45 @@ function renderVenduto(){
   renderVendPiatti(curVendCanale);
 }
 
+let vendPiattiSortBy = 'pz';
+
+function setVendPiattiSort(by, btn) {
+  vendPiattiSortBy = by;
+  document.querySelectorAll('.vp-sort-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  renderVendPiatti(curVendCanale);
+}
+
 function renderVendPiatti(canale){
-  const rows=canale==='tutti'?allMT:allMT.filter(r=>r.canale===canale);
-  const cnt={};
-  rows.forEach(r=>{const k=r.descrizione||r.piatto||'?';cnt[k]=(cnt[k]||0)+(r.quant||1);});
-  const sorted=Object.entries(cnt).sort((a,b)=>b[1]-a[1]).slice(0,12);
-  const max=sorted[0]?.[1]||1;
-  const color=canale==='tutti'?'#30d158':CCOLORS[canale];
-  document.getElementById('vendPiattiList').innerHTML=sorted.length?sorted.map(([n,c])=>`
-    <div class="bar-row"><div class="bar-name">${n}</div><div class="bar-bg"><div class="bar-fill" style="width:${Math.round(c/max*100)}%;background:${color};"></div></div><div class="bar-val">${Math.round(c)} pz</div></div>`).join(''):'<div class="empty">Nessun dato</div>';
+  const rows=(canale==='tutti'?allMT:allMT.filter(r=>r.canale===canale))
+    .filter(r=>r.descrizione&&!r.descrizione.startsWith('(V)'));
+  const cnt={}, val={};
+  rows.forEach(r=>{
+    const k=r.descrizione||'?';
+    cnt[k]=(cnt[k]||0)+(r.quant||1);
+    val[k]=(val[k]||0)+((r.quant||1)*(r.prezzo||0));
+  });
+  const sorted = vendPiattiSortBy==='val'
+    ? Object.entries(val).sort((a,b)=>b[1]-a[1]).slice(0,12)
+    : Object.entries(cnt).sort((a,b)=>b[1]-a[1]).slice(0,12);
+  const color=canale==='tutti'?'#30d158':(CCOLORS[canale]||'#30d158');
+  const maxV = sorted[0]?.[1]||1;
+  
+  const container = document.getElementById('vendPiattiList')?.closest('.card');
+  if (container && !container.querySelector('.vp-sort-btn')) {
+    const titleEl = container.querySelector('.card-title');
+    if (titleEl) titleEl.innerHTML = `Piatti per canale <span style="float:right;display:flex;gap:6px;">
+      <button class="vp-sort-btn cf-btn active" onclick="setVendPiattiSort('pz',this)">N. pezzi</button>
+      <button class="vp-sort-btn cf-btn" onclick="setVendPiattiSort('val',this)">Valore €</button>
+    </span>`;
+  }
+
+  document.getElementById('vendPiattiList').innerHTML=sorted.length?sorted.map(([n])=>{
+    const pz=Math.round(cnt[n]||0);
+    const v=val[n]||0;
+    const w=Math.round((vendPiattiSortBy==='val'?v:pz)/maxV*100);
+    return `<div class="bar-row"><div class="bar-name">${n}</div><div class="bar-bg"><div class="bar-fill" style="width:${w}%;background:${color};"></div></div><div class="bar-val" style="display:flex;gap:8px;"><span>${pz} pz</span><span style="color:var(--text3)">€${v.toFixed(2)}</span></div></div>`;
+  }).join(''):'<div class="empty">Nessun dato</div>';
 }
 
 function setVendCanale(c,btn){
@@ -1033,16 +1065,64 @@ function renderIncassi(){
   ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{stacked:true},y:{stacked:true},x:{ticks:{maxTicksLimit:12}}}}});
 }
 
+let piattiSortBy = 'pz'; // 'pz' o 'val'
+
+function setPiattiSort(by, btn) {
+  piattiSortBy = by;
+  document.querySelectorAll('.piatti-sort-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  renderPiatti();
+}
+
 function renderPiatti(){
   renderAnnoCfrBar('annoCfr_page_piatti');
-  const cnt={};
-  allMT.forEach(r=>{const k=r.descrizione||'?';cnt[k]=(cnt[k]||0)+(r.quant||1);});
-  const sorted=Object.entries(cnt).sort((a,b)=>b[1]-a[1]).slice(0,15);
-  const max=sorted[0]?.[1]||1;
-  document.getElementById('piattiList').innerHTML=sorted.length?sorted.map(([n,c])=>`
-    <div class="bar-row"><div class="bar-name">${n}</div><div class="bar-bg"><div class="bar-fill" style="width:${Math.round(c/max*100)}%;background:#30d158;"></div></div><div class="bar-val">${Math.round(c)} pz</div></div>`).join(''):'<div class="empty">Nessun dato</div>';
-  const top6=sorted.slice(0,6);
-  charts.cat=new Chart(document.getElementById('chartCat'),{type:'doughnut',data:{labels:top6.map(c=>c[0]),datasets:[{data:top6.map(c=>c[1]),backgroundColor:PAL}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}}});
+  const cnt={}, val={};
+  allMT.forEach(r=>{
+    const k=r.descrizione||'?';
+    // Escludi varianti (descrizioni che iniziano con (V) o simili)
+    if(k.startsWith('(V)') || k.startsWith('(v)')) return;
+    cnt[k]=(cnt[k]||0)+(r.quant||1);
+    val[k]=(val[k]||0)+((r.quant||1)*(r.prezzo||0));
+  });
+  
+  // Ordina per pezzi o valore
+  const sorted = piattiSortBy === 'val'
+    ? Object.entries(val).sort((a,b)=>b[1]-a[1]).slice(0,15)
+    : Object.entries(cnt).sort((a,b)=>b[1]-a[1]).slice(0,15);
+  
+  const maxVal = piattiSortBy === 'val' 
+    ? (sorted[0]?.[1]||1)
+    : (sorted.reduce((m,[n])=>Math.max(m,cnt[n]||0),1));
+
+  const piattiEl = document.getElementById('piattiList');
+  if (piattiEl) {
+    // Add sort buttons if not present
+    const container = piattiEl.closest('.card');
+    if (container && !container.querySelector('.piatti-sort-btn')) {
+      const titleEl = container.querySelector('.card-title');
+      if (titleEl) titleEl.innerHTML = `Più venduti <span style="float:right;display:flex;gap:6px;">
+        <button class="piatti-sort-btn cf-btn active" onclick="setPiattiSort('pz',this)">N. pezzi</button>
+        <button class="piatti-sort-btn cf-btn" onclick="setPiattiSort('val',this)">Valore €</button>
+      </span>`;
+    }
+    piattiEl.innerHTML = sorted.length ? sorted.map(([n])=>{
+      const pz = Math.round(cnt[n]||0);
+      const v = val[n]||0;
+      const barW = piattiSortBy==='val' ? Math.round(v/maxVal*100) : Math.round(pz/maxVal*100);
+      return `<div class="bar-row">
+        <div class="bar-name">${n}</div>
+        <div class="bar-bg"><div class="bar-fill" style="width:${barW}%;background:#30d158;"></div></div>
+        <div class="bar-val" style="display:flex;gap:8px;">
+          <span>${pz} pz</span>
+          <span style="color:var(--text3)">€${v.toFixed(2)}</span>
+        </div>
+      </div>`;
+    }).join('') : '<div class="empty">Nessun dato</div>';
+  }
+
+  const top6=Object.entries(cnt).filter(([n])=>!n.startsWith('(V)')).sort((a,b)=>b[1]-a[1]).slice(0,6);
+  const ctxCat = document.getElementById('chartCat');
+  if(ctxCat) charts.cat=new Chart(ctxCat,{type:'doughnut',data:{labels:top6.map(c=>c[0]),datasets:[{data:top6.map(c=>c[1]),backgroundColor:PAL}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}}});
 }
 
 function renderFasce(){
