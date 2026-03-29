@@ -158,8 +158,7 @@ body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--bg);
 .card-title { font-size: 12px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 16px; }
 
 /* HERO HOME */
-.hero-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
-@media(max-width:500px){ .hero-grid { grid-template-columns: 1fr; } }
+.hero-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
 .hero-card {
   background: var(--surface); border-radius: var(--r-xl);
   padding: 22px; box-shadow: var(--shadow);
@@ -426,7 +425,15 @@ body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--bg);
   <!-- PIATTI -->
   <div class="page" id="page-piatti">
     <div id="annoCfr_page_piatti"></div>
-    <div class="card"><div class="card-title">Più venduti</div><div id="piattiList"></div></div>
+    <div class="card">
+      <div class="card-title">Più venduti</div>
+      <div style="margin-bottom:10px;">
+        <input id="piattiSearch" type="text" placeholder="🔍 Cerca piatto..."
+          oninput="renderPiatti()"
+          style="width:100%;border:1.5px solid var(--border);border-radius:10px;padding:8px 12px;font-size:13px;background:var(--bg);color:var(--text);outline:none;">
+      </div>
+      <div id="piattiList"></div>
+    </div>
     <div class="card">
       <div class="card-title">Statistiche per categoria</div>
       <div id="catStats"></div>
@@ -626,6 +633,7 @@ let _canaleMap = null; // cache ricostruita dopo ogni loadAll()
  * @returns {string}  - 'tavoli' | 'immediato' | 'asporto' | 'domicilio' | 'fattura'
  */
 function getCanale(r) {
+  // Classifica sempre da camera + tipoasporto — non dipende da r.canale su Supabase.
   const cam = r.camera != null ? Number(r.camera) : null;
   const tasp = r.tipoasporto;
   if (tasp === '0' || tasp === 0) return 'asporto';
@@ -940,25 +948,22 @@ function renderHome(){
   const mediaDoc=nDoc>0?totale/nDoc:0;
 
   document.getElementById('heroGrid').innerHTML=`
+    <div class="hero-card" style="border-top:3px solid var(--text)">
+      <div class="hc-label">💰 Totale</div>
+      <div class="hc-val" style="color:var(--text);font-size:26px">${fmt(totale)}</div>
+      <div class="hc-sub">${nDoc} documenti</div>
+    </div>
     <div class="hero-card green">
-      <div class="hc-icon">🧾</div>
-      <div class="hc-label">Scontrini</div>
-      <div class="hc-val">${fmt(totS)}</div>
-      <div class="hc-sub">${mf.filter(r=>r.tipo==='S').length} documenti</div>
+      <div class="hc-label">🧾 Scontrini</div>
+      <div class="hc-val" style="font-size:26px">${fmt(totS)}</div>
+      <div class="hc-sub">${mf.filter(r=>r.tipo==='S').length} doc</div>
     </div>
     <div class="hero-card blue">
-      <div class="hc-icon">📄</div>
-      <div class="hc-label">Fatture</div>
-      <div class="hc-val">${fmt(totF)}</div>
-      <div class="hc-sub">${mf.filter(r=>r.tipo==='F').length} documenti</div>
+      <div class="hc-label">📄 Fatture</div>
+      <div class="hc-val" style="font-size:26px">${fmt(totF)}</div>
+      <div class="hc-sub">${mf.filter(r=>r.tipo==='F').length} doc</div>
     </div>
-    ${showP?`<div class="hero-card amber"><div class="hc-icon">🧾</div><div class="hc-label">Conti (P)</div><div class="hc-val">${fmt(totP)}</div><div class="hc-sub">${allMF.filter(r=>r.tipo==='P').length} documenti</div></div>`:''}
-    <div class="hero-card${showP?'':' blue'}">
-      <div class="hc-icon">💰</div>
-      <div class="hc-label">Totale</div>
-      <div class="hc-val" style="color:var(--text)">${fmt(totale)}</div>
-      <div class="hc-sub">${nDoc} documenti</div>
-    </div>`;
+    ${showP?`<div class="hero-card amber"><div class="hc-label">🧾 Conti (P)</div><div class="hc-val" style="font-size:26px">${fmt(totP)}</div><div class="hc-sub">${allMF.filter(r=>r.tipo==='P').length} doc</div></div>`:''}`;
 
   const totColaz = totale>0&&totCop>0 ? (colN/totCop*totale) : 0;
   const totPranzo = totale>0&&totCop>0 ? (praN/totCop*totale) : 0;
@@ -1007,10 +1012,10 @@ function renderHome(){
 function renderVenduto(){
   renderAnnoCfrBar('annoCfr_page_venduto');
   const mf=allMF; // inclusi P per quadro completo
-  const canali  = ['tavoli','immediato','asporto','domicilio','fattura'];
-  const cLabels = ['Sala','Banco','Asporto','Domicilio','Fatture'];
-  const cSub    = ['Tavoli numerati','Banco/Cassa rapida','Ritiro asporto','Consegna a domicilio','Fatture emesse'];
-  const cIcon   = ['🪑','⚡','🛍️','🛵','🧾'];
+  const canali  = ['tavoli','immediato','asporto','domicilio'];
+  const cLabels = ['Sala','Banco','Asporto','Domicilio'];
+  const cSub    = ['Tavoli numerati','Banco/Cassa rapida','Ritiro asporto','Consegna a domicilio'];
+  const cIcon   = ['🪑','⚡','🛍️','🛵'];
   const stats=canali.map(c=>{
     const rows=mf.filter(r=>r.canale===c);
     const val=rows.reduce((a,r)=>a+(r.totale||0),0);
@@ -1132,7 +1137,8 @@ function renderPiatti(){
   });
   const isVariante = n => n.startsWith('(V)') || n.startsWith('(v)');
   const sortFn = (a,b) => b[1]-a[1];
-  const normali = Object.entries(piattiSortBy==='val'?val:cnt).filter(([n])=>!isVariante(n)).sort(sortFn).slice(0,15);
+  const piattiKw = (document.getElementById('piattiSearch')?.value||'').toLowerCase().trim();
+  const normali = Object.entries(piattiSortBy==='val'?val:cnt).filter(([n])=>!isVariante(n)&&(!piattiKw||n.toLowerCase().includes(piattiKw))).sort(sortFn).slice(0,30);
   const varianti = Object.entries(piattiSortBy==='val'?val:cnt).filter(([n])=>isVariante(n)).sort(sortFn);
   const sorted = [...normali, ...varianti];
   const maxVal = piattiSortBy === 'val' ? (sorted[0]?.[1]||1) : (sorted.reduce((m,[n])=>Math.max(m,cnt[n]||0),1));
@@ -1166,45 +1172,118 @@ function renderPiatti(){
   const catEl = document.getElementById('catStats');
   if (catEl) {
     const catMap = {};
+    const catPiattiMap = {}; // per ogni categoria, mappa piatto → {pz, val}
     allMT.forEach(r => {
       if (!r.categoria) return;
       if (!catMap[r.categoria]) catMap[r.categoria] = {pz:0, val:0};
       catMap[r.categoria].pz += (r.quant||1);
       catMap[r.categoria].val += (r.quant||1)*(r.prezzo||0);
+      if (!catPiattiMap[r.categoria]) catPiattiMap[r.categoria] = {};
+      const k = r.descrizione||'?';
+      if (!catPiattiMap[r.categoria][k]) catPiattiMap[r.categoria][k] = {pz:0,val:0};
+      catPiattiMap[r.categoria][k].pz += (r.quant||1);
+      catPiattiMap[r.categoria][k].val += (r.quant||1)*(r.prezzo||0);
     });
     const catSorted = Object.entries(catMap).sort((a,b)=>b[1].pz-a[1].pz);
     const totPz = catSorted.reduce((a,[,v])=>a+v.pz,0)||1;
     const totVal = catSorted.reduce((a,[,v])=>a+v.val,0)||1;
     if (catSorted.length) {
-      catEl.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:13px;">
-        <thead><tr style="border-bottom:2px solid var(--border);">
-          <th style="text-align:left;padding:6px 8px;color:var(--text3)">Categoria</th>
-          <th style="text-align:right;padding:6px 8px;color:var(--text3)">Pezzi</th>
-          <th style="text-align:right;padding:6px 8px;color:var(--text3)">%</th>
-          <th style="text-align:right;padding:6px 8px;color:var(--text3)">Valore €</th>
-          <th style="text-align:right;padding:6px 8px;color:var(--text3)">%</th>
-        </tr></thead>
-        <tbody>${catSorted.map(([cat,v],i)=>`
-          <tr style="border-bottom:1px solid var(--border);${i%2===0?'background:var(--bg);':''}">
-            <td style="padding:6px 8px;font-weight:500">${cat}</td>
-            <td style="padding:6px 8px;text-align:right">${Math.round(v.pz)}</td>
-            <td style="padding:6px 8px;text-align:right;color:var(--text3)">${(v.pz/totPz*100).toFixed(1)}%</td>
-            <td style="padding:6px 8px;text-align:right">${fmt(v.val)}</td>
-            <td style="padding:6px 8px;text-align:right;color:var(--text3)">${(v.val/totVal*100).toFixed(1)}%</td>
-          </tr>`).join('')}
-        </tbody>
-        <tfoot><tr style="border-top:2px solid var(--border);font-weight:600;">
-          <td style="padding:6px 8px">Totale</td>
-          <td style="padding:6px 8px;text-align:right">${Math.round(totPz)}</td>
-          <td style="padding:6px 8px;text-align:right;color:var(--text3)">100%</td>
-          <td style="padding:6px 8px;text-align:right">${fmt(totVal)}</td>
-          <td style="padding:6px 8px;text-align:right;color:var(--text3)">100%</td>
-        </tr></tfoot>
-      </table>`;
+      catEl.innerHTML = `
+        <div style="margin-bottom:10px;">
+          <input id="catSearch" type="text" placeholder="🔍 Cerca piatto o categoria..."
+            oninput="filterCatSearch()"
+            style="width:100%;border:1.5px solid var(--border);border-radius:10px;padding:8px 12px;font-size:13px;background:var(--bg);color:var(--text);outline:none;">
+        </div>
+        <table id="catTable" style="width:100%;border-collapse:collapse;font-size:13px;">
+          <thead><tr style="border-bottom:2px solid var(--border);">
+            <th style="text-align:left;padding:6px 8px;color:var(--text3)">Categoria</th>
+            <th style="text-align:right;padding:6px 8px;color:var(--text3)">Pezzi</th>
+            <th style="text-align:right;padding:6px 8px;color:var(--text3)">%</th>
+            <th style="text-align:right;padding:6px 8px;color:var(--text3)">Valore €</th>
+            <th style="text-align:right;padding:6px 8px;color:var(--text3)">%</th>
+          </tr></thead>
+          <tbody id="catTbody">${catSorted.map(([cat,v],i)=>{
+            const piatti = Object.entries(catPiattiMap[cat]||{}).sort((a,b)=>b[1].pz-a[1].pz);
+            const catPzTot = v.pz||1; const catValTot = v.val||1;
+            const piattiRows = piatti.map(([nome,pv])=>`
+              <tr class="cat-detail-row cat-detail-${i}" style="display:none;background:#f8f8fc;">
+                <td style="padding:4px 8px 4px 28px;color:var(--text2);font-size:12px">${nome}</td>
+                <td style="padding:4px 8px;text-align:right;font-size:12px">${Math.round(pv.pz)}</td>
+                <td style="padding:4px 8px;text-align:right;color:var(--text3);font-size:12px">${(pv.pz/catPzTot*100).toFixed(1)}%</td>
+                <td style="padding:4px 8px;text-align:right;font-size:12px">${fmt(pv.val)}</td>
+                <td style="padding:4px 8px;text-align:right;color:var(--text3);font-size:12px">${(pv.val/catValTot*100).toFixed(1)}%</td>
+              </tr>`).join('');
+            return `
+              <tr class="cat-row" data-cat="${i}" data-catname="${cat}" style="border-bottom:1px solid var(--border);cursor:pointer;${i%2===0?'background:var(--bg);':''}"
+                onclick="toggleCatDetail(${i}, this)">
+                <td style="padding:6px 8px;font-weight:600">
+                  <span class="cat-arrow-${i}" style="display:inline-block;transition:transform 0.2s;margin-right:4px;color:var(--text3)">▶</span>${cat}
+                </td>
+                <td style="padding:6px 8px;text-align:right">${Math.round(v.pz)}</td>
+                <td style="padding:6px 8px;text-align:right;color:var(--text3)">${(v.pz/totPz*100).toFixed(1)}%</td>
+                <td style="padding:6px 8px;text-align:right">${fmt(v.val)}</td>
+                <td style="padding:6px 8px;text-align:right;color:var(--text3)">${(v.val/totVal*100).toFixed(1)}%</td>
+              </tr>
+              ${piattiRows}`;
+          }).join('')}
+          </tbody>
+          <tfoot><tr style="border-top:2px solid var(--border);font-weight:600;">
+            <td style="padding:6px 8px">Totale</td>
+            <td style="padding:6px 8px;text-align:right">${Math.round(totPz)}</td>
+            <td style="padding:6px 8px;text-align:right;color:var(--text3)">100%</td>
+            <td style="padding:6px 8px;text-align:right">${fmt(totVal)}</td>
+            <td style="padding:6px 8px;text-align:right;color:var(--text3)">100%</td>
+          </tr></tfoot>
+        </table>`;
     } else {
       catEl.innerHTML = '<div class="empty">Nessun dato categorie disponibile</div>';
     }
   }
+}
+
+function toggleCatDetail(i, row) {
+  const details = document.querySelectorAll('.cat-detail-'+i);
+  const arrow = document.querySelector('.cat-arrow-'+i);
+  const isOpen = details.length > 0 && details[0].style.display !== 'none';
+  details.forEach(r => r.style.display = isOpen ? 'none' : 'table-row');
+  if (arrow) arrow.style.transform = isOpen ? '' : 'rotate(90deg)';
+}
+
+function filterCatSearch() {
+  const kw = (document.getElementById('catSearch')?.value||'').toLowerCase().trim();
+  const rows = document.querySelectorAll('#catTbody tr');
+  if (!kw) {
+    rows.forEach(r => {
+      if (r.classList.contains('cat-row')) r.style.display = '';
+      else r.style.display = 'none'; // chiudi dettagli
+    });
+    // reset arrows
+    document.querySelectorAll('[class^="cat-arrow-"]').forEach(a => a.style.transform = '');
+    return;
+  }
+  // Mostra righe categoria che matchano, o categorie che hanno piatti che matchano
+  const catRows = document.querySelectorAll('.cat-row');
+  catRows.forEach(catRow => {
+    const idx = catRow.dataset.cat;
+    const catName = (catRow.dataset.catname||'').toLowerCase();
+    const details = document.querySelectorAll('.cat-detail-'+idx);
+    let catMatch = catName.includes(kw);
+    let piattoMatch = false;
+    details.forEach(d => {
+      const txt = (d.cells[0]?.textContent||'').toLowerCase();
+      if (txt.includes(kw)) { piattoMatch = true; d.style.display = 'table-row'; }
+      else d.style.display = 'none';
+    });
+    if (catMatch || piattoMatch) {
+      catRow.style.display = '';
+      if (piattoMatch) {
+        const arrow = document.querySelector('.cat-arrow-'+idx);
+        if (arrow) arrow.style.transform = 'rotate(90deg)';
+      }
+    } else {
+      catRow.style.display = 'none';
+    }
+  });
 }
 
 function renderFasce(){
@@ -1664,7 +1743,7 @@ document.getElementById('d1').value=mfa.toISOString().split('T')[0];
 
 initAnnoSelector();
 loadAll();
-setInterval(loadAll, 600000);
+setInterval(loadAll, 60000);
 </script>
 </body>
 </html>
