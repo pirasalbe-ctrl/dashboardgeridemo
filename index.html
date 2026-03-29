@@ -211,10 +211,10 @@ body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--bg);
   padding: 18px; box-shadow: var(--shadow-sm);
   border-left: 4px solid transparent;
 }
-.vend-card.tav { border-left-color: var(--tav); }
-.vend-card.imm { border-left-color: var(--imm); }
-.vend-card.asp { border-left-color: var(--asp); }
-.vend-card.dom { border-left-color: var(--dom); }
+.vend-card.tavoli { border-left-color: var(--tav); }
+.vend-card.immediato { border-left-color: var(--imm); }
+.vend-card.asporto { border-left-color: var(--asp); }
+.vend-card.domicilio { border-left-color: var(--dom); }
 .vc-top { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
 .vc-icon { font-size: 20px; }
 .vc-title { font-size: 14px; font-weight: 600; }
@@ -407,8 +407,8 @@ body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--bg);
       <div class="card-title">Piatti per canale</div>
       <div class="canale-filt" id="canaleFiltri">
         <button class="cf-btn active" onclick="setVendCanale('tutti',this)">Tutti</button>
-        <button class="cf-btn" onclick="setVendCanale('tavoli',this)">Tavoli</button>
-        <button class="cf-btn" onclick="setVendCanale('immediato',this)">Conto imm.</button>
+        <button class="cf-btn" onclick="setVendCanale('tavoli',this)">Sala</button>
+        <button class="cf-btn" onclick="setVendCanale('immediato',this)">Banco</button>
         <button class="cf-btn" onclick="setVendCanale('asporto',this)">Asporto</button>
         <button class="cf-btn" onclick="setVendCanale('domicilio',this)">Domicilio</button>
       </div>
@@ -454,7 +454,6 @@ body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--bg);
 
   <!-- CONFRONTO -->
   <div class="page" id="page-confronto">
-    <!-- Controlli confronto -->
     <div class="card" style="margin-bottom:12px;">
       <div class="card-title">Impostazioni confronto</div>
       <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin-top:8px;">
@@ -490,19 +489,15 @@ body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--bg);
         <div id="meteoSetupCard"></div>
       </div>
     </div>
-    <!-- KPI -->
     <div class="kpi-grid" id="kpiConfronto"></div>
-    <!-- Grafico -->
     <div class="card">
       <div class="card-title" id="confrontoChartTitle">Confronto incassi</div>
       <div class="chart-wrap" style="height:260px;"><canvas id="chartConfronto"></canvas></div>
     </div>
-    <!-- Meteo bar -->
     <div class="card" id="meteoDayCard" style="display:none;">
       <div class="card-title">Meteo periodo</div>
       <div id="meteoDayBar" class="meteo-bar" style="flex-wrap:wrap;gap:6px;"></div>
     </div>
-    <!-- Tabella dettaglio -->
     <div class="card">
       <div class="card-title">Dettaglio</div>
       <div id="confrontoTable" style="overflow-x:auto;"></div>
@@ -571,7 +566,7 @@ body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--bg);
             <button class="cf-btn" id="anomFiltSconto" onclick="setAnomFilt('sconto',this)">Sconti</button>
             <button class="cf-btn" id="anomFiltNeg" onclick="setAnomFilt('negativo',this)">Negativi</button>
           </div>
-          <input id="anomSearch" type="text" placeholder="🔍 Cerca per parola chiave..." 
+          <input id="anomSearch" type="text" placeholder="🔍 Cerca per parola chiave..."
             oninput="renderAnomalie()"
             style="border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:13px;width:220px;background:var(--bg);color:var(--text1);outline:none;">
         </div>
@@ -585,16 +580,80 @@ body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--bg);
 <script>
 const SB_URL = "https://rykmnurlyqgvamacrqun.supabase.co";
 const SB_KEY = "sb_publishable_78f791A8-iKXHfEDYxD9mA_urytx9FR";
+
+// Colori per canale — la chiave corrisponde al valore restituito da getCanale()
 const CCOLORS = { tavoli:'#30d158', immediato:'#0071e3', asporto:'#ff9f0a', domicilio:'#ff3b30', fattura:'#bf5af2' };
 const PAL = ['#30d158','#0071e3','#ff9f0a','#ff3b30','#bf5af2','#ac8e68','#636366'];
 
-let showP=true, curFilter='oggi', curVendCanale='tutti';
-let activeAnni = [new Date().getFullYear()]; // anni selezionati globalmente
-const ANNO_COLORS = ['#30d158','#0071e3','#ff9f0a']; // verde, blu, arancio
+// ── CLASSIFICAZIONE CANALE ──────────────────────────────────────────────────
+// Regole basate sul numero tavolo in movfisc:
+//   tavolo 1–999     → 'tavoli'    (sale del ristorante)
+//   tavolo 1001–1040 → 'immediato' (banco / conto immediato)
+//   tavolo < 0       → 'domicilio' se movtav ha riga con "consegna"
+//                      altrimenti  'asporto'
+//   tipo = 'F'       → 'fattura'   (override sempre)
+//
+// NOTA: il campo r.canale su Supabase NON è affidabile — viene ignorato.
+// La classificazione si basa esclusivamente su r.tavolo + movtav.
+// ────────────────────────────────────────────────────────────────────────────
 
-function renderAnnoCfrBar(containerId, getMFForAnno) {
-  // Mostra KPI comparativi per tutti gli anni attivi
-  // getMFForAnno(anno) deve restituire i record movfisc per quell'anno nel periodo corrente
+/**
+ * Costruisce una mappa codmovfisc → 'domicilio'|'asporto'
+ * analizzando le righe di movtav con tavolo negativo.
+ * Viene chiamata una sola volta dopo il caricamento di allMT.
+ */
+function buildCanaleMap() {
+  const consegnaRE = /consegna|supplemento\s+consegna/i;
+  const negMap = {};
+  allMT.forEach(r => {
+    if (!r.codmovfisc) return;
+    if (consegnaRE.test(r.descrizione || '')) {
+      // Presenza di riga consegna → domicilio (ha precedenza)
+      negMap[r.codmovfisc] = 'domicilio';
+    } else if (!negMap[r.codmovfisc]) {
+      // Nessuna riga consegna finora → asporto (ma può essere sovrascritto)
+      negMap[r.codmovfisc] = 'asporto';
+    }
+  });
+  return negMap;
+}
+
+let _canaleMap = null; // cache ricostruita dopo ogni loadAll()
+
+/**
+ * Restituisce il canale corretto per un record movfisc.
+ * @param {Object} r  - record movfisc
+ * @returns {string}  - 'tavoli' | 'immediato' | 'asporto' | 'domicilio' | 'fattura'
+ */
+function getCanale(r) {
+  if (r.tipo === 'F') return 'fattura';
+  const tav = r.tavolo;
+  if (tav == null) return 'immediato';
+  if (tav >= 1 && tav <= 999)    return 'tavoli';
+  if (tav >= 1001 && tav <= 1040) return 'immediato';
+  if (tav < 0) {
+    if (!_canaleMap) _canaleMap = buildCanaleMap();
+    return _canaleMap[r.codice] || 'asporto';
+  }
+  return 'immediato'; // fallback
+}
+
+/**
+ * Arricchisce ogni record di allMF con il canale calcolato.
+ * Sovrascrive il campo r.canale con il valore corretto.
+ * Va chiamata ogni volta che allMF o allMT vengono ricaricati.
+ */
+function enrichCanali() {
+  _canaleMap = buildCanaleMap(); // ricostruisce sempre fresh
+  allMF.forEach(r => { r.canale = getCanale(r); });
+}
+// ────────────────────────────────────────────────────────────────────────────
+
+let showP=true, curFilter='oggi', curVendCanale='tutti';
+let activeAnni = [new Date().getFullYear()];
+const ANNO_COLORS = ['#30d158','#0071e3','#ff9f0a'];
+
+function renderAnnoCfrBar(containerId) {
   if (activeAnni.length <= 1) {
     const el = document.getElementById(containerId);
     if (el) el.innerHTML = '';
@@ -608,10 +667,8 @@ function renderAnnoCfrBar(containerId, getMFForAnno) {
     const recs = showP ? allMF.filter(r=>r.data>=daS&&r.data<=aS) : allMF.filter(r=>r.data>=daS&&r.data<=aS&&r.tipo!=='P');
     const totale = recs.reduce((a,r)=>a+(r.totale||0),0);
     const nDoc = recs.length;
-    // Delta rispetto all'anno base (primo)
     let deltaHtml = '';
     if (i > 0) {
-      const baseShift = activeAnni[0] - activeAnni[0];
       const baseRecs = showP ? allMF.filter(r=>r.data>=da&&r.data<=a) : allMF.filter(r=>r.data>=da&&r.data<=a&&r.tipo!=='P');
       const baseTot = baseRecs.reduce((a,r)=>a+(r.totale||0),0);
       if (baseTot > 0) {
@@ -641,17 +698,14 @@ function initAnnoSelector() {
     btn.className = 'anno-btn' + (anno === oggi ? ' active' : '');
     btn.dataset.anno = anno;
     btn.textContent = anno;
-    if (anno === oggi) {
-      btn.style.background = ANNO_COLORS[0];
-      btn.style.borderColor = ANNO_COLORS[0];
-    }
+    if (anno === oggi) { btn.style.background = ANNO_COLORS[0]; btn.style.borderColor = ANNO_COLORS[0]; }
     btn.onclick = function() {
       const a = parseInt(this.dataset.anno);
       if (activeAnni.includes(a)) {
-        if (activeAnni.length === 1) return; // almeno 1 anno
+        if (activeAnni.length === 1) return;
         activeAnni = activeAnni.filter(x => x !== a);
       } else {
-        if (activeAnni.length >= 3) return; // max 3 anni
+        if (activeAnni.length >= 3) return;
         activeAnni = [...activeAnni, a].sort((a,b) => b-a);
       }
       updateAnnoSelector();
@@ -677,18 +731,6 @@ function updateAnnoSelector() {
   });
 }
 
-function getAnniMF() {
-  // Restituisce array di {anno, records} per tutti gli anni attivi
-  const{da,a}=getRange();
-  return activeAnni.map((anno, i) => {
-    const shift = anno - activeAnni[0]; // differenza anni rispetto al primo
-    const daShifted = shiftAnno(da, shift);
-    const aShifted = shiftAnno(a, shift);
-    const records = allMF.filter(r => r.data >= daShifted && r.data <= aShifted);
-    return { anno, records, da: daShifted, a: aShifted, color: ANNO_COLORS[i] };
-  });
-}
-
 function shiftAnno(dateStr, years) {
   if (!dateStr) return dateStr;
   const d = new Date(dateStr);
@@ -696,11 +738,6 @@ function shiftAnno(dateStr, years) {
   return d.toISOString().split('T')[0];
 }
 
-function getDaysShifted(da, a) {
-  const days = [], d = new Date(da), end = new Date(a);
-  while(d<=end){ days.push(d.toISOString().split('T')[0]); d.setDate(d.getDate()+1); }
-  return days;
-}
 let allMF=[], allMT=[], allMP=[], allLM=[], allCAM=[], allAN=[], allCAT=[];
 let charts={};
 
@@ -744,8 +781,15 @@ async function loadAll() {
     allMP=allMP.filter(r=>r.data>=da&&r.data<=a);
     allLM=allLM.filter(r=>{if(!r.dataora)return false;const d=r.dataora.split('T')[0];return d>=da&&d<=a;});
     allAN=allAN.filter(r=>r.data>=da&&r.data<=a);
+
+    // ── PUNTO CRITICO: arricchisce allMF con canale calcolato correttamente ──
+    // Deve essere chiamato DOPO che sia allMF che allMT sono stati caricati e filtrati,
+    // perché buildCanaleMap() analizza allMT per distinguere asporto/domicilio.
+    enrichCanali();
+    // ────────────────────────────────────────────────────────────────────────
+
     document.getElementById('syncInfo').textContent=new Date().toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
-    // Carica anche dati anni precedenti se selezionati
+
     if (activeAnni.length > 1) {
       const{da,a}=getRange();
       for (let i=1; i<activeAnni.length; i++) {
@@ -754,9 +798,10 @@ async function loadAll() {
         const aS = shiftAnno(a, shift);
         try {
           const extra = await sbGet('movfisc',{'data':'gte.'+daS,'data2':'lte.'+aS,'order':'data.asc'});
-          // merge into allMF avoiding duplicates
           const existing = new Set(allMF.map(r=>r.codice));
           extra.filter(r=>!existing.has(r.codice)).forEach(r=>allMF.push(r));
+          // Ricalcola canali dopo merge anni precedenti
+          enrichCanali();
         } catch(e) { /* silent */ }
       }
     }
@@ -770,7 +815,7 @@ async function loadAll() {
 function getMF(){ return showP ? allMF : allMF.filter(r=>r.tipo!=='P'); }
 
 // ── METEO ──────────────────────────────────────────────────────────────────
-let meteoCache = {}; // {data: {tmax, tmin, prec, wmo}}
+let meteoCache = {};
 let meteoCords = JSON.parse(localStorage.getItem('meteoCords')||'null');
 
 const WMO_ICON = {
@@ -861,6 +906,7 @@ function resetMeteo() {
   renderCurrentPage();
 }
 // ────────────────────────────────────────────────────────────────────────────
+
 function nomeCameriere(id){ const n=parseInt(id); const c=allCAM.find(r=>parseInt(r.id)===n); return c?c.nominativo:(n>0?'Op. #'+n:'Cassa'); }
 
 function renderCurrentPage(){
@@ -876,14 +922,10 @@ function renderPage(page){
 }
 
 function copertiPerServizio(){
-  // I coperti reali vengono dalle righe LINEEMOVFISC con descrizione "Coperto colazione/pranzo/cena"
-  // La quantità di quella riga = numero coperti reali (es. "Coperto pranzo" qta 3 = 3 coperti)
-  // Filtra per data usando dataoracomanda che è già filtrato in allMT
   const isCoperto = r => r.descrizione && r.descrizione.toLowerCase().includes('coperto');
   const col = allMT.filter(r => isCoperto(r) && r.descrizione.toLowerCase().includes('colazione'));
   const pra = allMT.filter(r => isCoperto(r) && r.descrizione.toLowerCase().includes('pranzo'));
   const cen = allMT.filter(r => isCoperto(r) && r.descrizione.toLowerCase().includes('cena'));
-  // Somma le quantità (ogni riga coperto ha qta = numero persone)
   const sumQ = arr => arr.reduce((a,r) => a + (r.quant||0), 0);
   return{col, pra, cen, colN: sumQ(col), praN: sumQ(pra), cenN: sumQ(cen)};
 }
@@ -895,7 +937,7 @@ function renderHome(){
   const totP=allMF.filter(r=>r.tipo==='P').reduce((a,r)=>a+(r.totale||0),0);
   const totale=totS+totF+(showP?totP:0);
   const nDoc=mf.length;
-  const {col,pra,cen,colN,praN,cenN}=copertiPerServizio();
+  const {colN,praN,cenN}=copertiPerServizio();
   const totCop=colN+praN+cenN;
   const mediaC=totCop>0?totale/totCop:0;
   const mediaDoc=nDoc>0?totale/nDoc:0;
@@ -921,32 +963,22 @@ function renderHome(){
       <div class="hc-sub">${nDoc} documenti</div>
     </div>`;
 
-  // Coperti per servizio con totale venduto
   const totColaz = totale>0&&totCop>0 ? (colN/totCop*totale) : 0;
   const totPranzo = totale>0&&totCop>0 ? (praN/totCop*totale) : 0;
-  const totCena = totale>0&&totCop>0 ? (cenN/totCop*totale) : 0;
+  const totCena   = totale>0&&totCop>0 ? (cenN/totCop*totale) : 0;
 
   document.getElementById('servizioGrid').innerHTML=`
     <div class="serv-card">
-      <div class="s-icon">☀️</div>
-      <div class="s-label">Colazione</div>
-      <div class="s-val">${fmtN(colN)}</div>
-      <div class="s-totale">${fmt(totColaz)}</div>
-      <div class="s-sub">coperti</div>
+      <div class="s-icon">☀️</div><div class="s-label">Colazione</div>
+      <div class="s-val">${fmtN(colN)}</div><div class="s-totale">${fmt(totColaz)}</div><div class="s-sub">coperti</div>
     </div>
     <div class="serv-card">
-      <div class="s-icon">🌤️</div>
-      <div class="s-label">Pranzo</div>
-      <div class="s-val">${fmtN(praN)}</div>
-      <div class="s-totale">${fmt(totPranzo)}</div>
-      <div class="s-sub">coperti</div>
+      <div class="s-icon">🌤️</div><div class="s-label">Pranzo</div>
+      <div class="s-val">${fmtN(praN)}</div><div class="s-totale">${fmt(totPranzo)}</div><div class="s-sub">coperti</div>
     </div>
     <div class="serv-card">
-      <div class="s-icon">🌙</div>
-      <div class="s-label">Cena</div>
-      <div class="s-val">${fmtN(cenN)}</div>
-      <div class="s-totale">${fmt(totCena)}</div>
-      <div class="s-sub">coperti</div>
+      <div class="s-icon">🌙</div><div class="s-label">Cena</div>
+      <div class="s-val">${fmtN(cenN)}</div><div class="s-totale">${fmt(totCena)}</div><div class="s-sub">coperti</div>
     </div>`;
 
   document.getElementById('kpiHome2').innerHTML=`
@@ -959,12 +991,17 @@ function renderHome(){
   document.getElementById('docHomeChart').innerHTML=docItems.map(i=>`
     <div class="bar-row"><div class="bar-name">${i.l}</div><div class="bar-bg"><div class="bar-fill" style="width:${Math.round(i.v/maxD*100)}%;background:${i.c};"></div></div><div class="bar-val">${fmt(i.v)}</div></div>`).join('');
 
-  const canali=['tavoli','immediato','asporto','domicilio'];
-  const cLabels=['Tavoli','Conto imm.','Asporto','Domicilio'];
-  const cVals=canali.map(c=>mf.filter(r=>r.canale===c).reduce((a,r)=>a+(r.totale||0),0));
-  const maxC=Math.max(...cVals,1);
-  document.getElementById('vendHomeChart').innerHTML=canali.map((c,i)=>`
-    <div class="bar-row"><div class="bar-name">${cLabels[i]}</div><div class="bar-bg"><div class="bar-fill" style="width:${Math.round(cVals[i]/maxC*100)}%;background:${CCOLORS[c]};"></div></div><div class="bar-val">${fmt(cVals[i])}</div></div>`).join('');
+  // Venduto per canale — usa r.canale già calcolato da enrichCanali()
+  const canali    = ['tavoli','immediato','asporto','domicilio'];
+  const cLabels   = ['Sala','Banco','Asporto','Domicilio'];
+  const cVals     = canali.map(c => mf.filter(r=>r.canale===c).reduce((a,r)=>a+(r.totale||0),0));
+  const maxC      = Math.max(...cVals, 1);
+  document.getElementById('vendHomeChart').innerHTML = canali.map((c,i)=>`
+    <div class="bar-row">
+      <div class="bar-name">${cLabels[i]}</div>
+      <div class="bar-bg"><div class="bar-fill" style="width:${Math.round(cVals[i]/maxC*100)}%;background:${CCOLORS[c]};"></div></div>
+      <div class="bar-val">${fmt(cVals[i])}</div>
+    </div>`).join('');
 
   document.getElementById('homeLoading').style.display='none';
   document.getElementById('homeContent').style.display='block';
@@ -972,13 +1009,11 @@ function renderHome(){
 
 function renderVenduto(){
   renderAnnoCfrBar('annoCfr_page_venduto');
-  // Per i canali usiamo sempre allMF (inclusi P) per avere il quadro completo
-  const mfAll=allMF;
-  const mf=mfAll;
-  const canali=['tavoli','immediato','asporto','domicilio','fattura'];
-  const cLabels=['Tavoli','Conto immediato','Asporto','Domicilio','Fatture'];
-  const cSub=['Tavoli numerati','Banco/Cassa rapida','Ritiro asporto','Consegna a domicilio','Fatture emesse'];
-  const cIcon=['🪑','⚡','🛍️','🛵','🧾'];
+  const mf=allMF; // inclusi P per quadro completo
+  const canali  = ['tavoli','immediato','asporto','domicilio','fattura'];
+  const cLabels = ['Sala','Banco','Asporto','Domicilio','Fatture'];
+  const cSub    = ['Tavoli numerati','Banco/Cassa rapida','Ritiro asporto','Consegna a domicilio','Fatture emesse'];
+  const cIcon   = ['🪑','⚡','🛍️','🛵','🧾'];
   const stats=canali.map(c=>{
     const rows=mf.filter(r=>r.canale===c);
     const val=rows.reduce((a,r)=>a+(r.totale||0),0);
@@ -1012,8 +1047,17 @@ function setVendPiattiSort(by, btn) {
 }
 
 function renderVendPiatti(canale){
-  const rows=(canale==='tutti'?allMT:allMT.filter(r=>r.canale===canale))
-    .filter(r=>r.descrizione);
+  // Per filtrare i piatti per canale, serve collegare movtav → movfisc tramite codmovfisc
+  // allMT.canale rispecchia il canale del documento padre
+  let rows;
+  if (canale === 'tutti') {
+    rows = allMT.filter(r=>r.descrizione);
+  } else {
+    // Trova i codici movfisc del canale selezionato
+    const codiciFilt = new Set(allMF.filter(r=>r.canale===canale).map(r=>r.codice));
+    rows = allMT.filter(r=>r.descrizione && codiciFilt.has(r.codmovfisc));
+  }
+
   const isVar = n => n.startsWith('(V)') || n.startsWith('(v)');
   const cnt={}, val={};
   rows.forEach(r=>{
@@ -1027,7 +1071,7 @@ function renderVendPiatti(canale){
   const sorted = [...normaliV, ...variantiV];
   const color=canale==='tutti'?'#30d158':(CCOLORS[canale]||'#30d158');
   const maxV = sorted[0]?.[1]||1;
-  
+
   const container = document.getElementById('vendPiattiList')?.closest('.card');
   if (container && !container.querySelector('.vp-sort-btn')) {
     const titleEl = container.querySelector('.card-title');
@@ -1072,7 +1116,7 @@ function renderIncassi(){
   ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{stacked:true},y:{stacked:true},x:{ticks:{maxTicksLimit:12}}}}});
 }
 
-let piattiSortBy = 'pz'; // 'pz' o 'val'
+let piattiSortBy = 'pz';
 
 function setPiattiSort(by, btn) {
   piattiSortBy = by;
@@ -1089,27 +1133,15 @@ function renderPiatti(){
     cnt[k]=(cnt[k]||0)+(r.quant||1);
     val[k]=(val[k]||0)+((r.quant||1)*(r.prezzo||0));
   });
-  
   const isVariante = n => n.startsWith('(V)') || n.startsWith('(v)');
-  
-  // Ordina: prima i piatti normali, poi le varianti in fondo
-  const sortFn = piattiSortBy === 'val'
-    ? (a,b) => b[1]-a[1]
-    : (a,b) => b[1]-a[1];
-  
-  const normali = Object.entries(piattiSortBy==='val'?val:cnt)
-    .filter(([n])=>!isVariante(n)).sort(sortFn).slice(0,15);
-  const varianti = Object.entries(piattiSortBy==='val'?val:cnt)
-    .filter(([n])=>isVariante(n)).sort(sortFn);
+  const sortFn = (a,b) => b[1]-a[1];
+  const normali = Object.entries(piattiSortBy==='val'?val:cnt).filter(([n])=>!isVariante(n)).sort(sortFn).slice(0,15);
+  const varianti = Object.entries(piattiSortBy==='val'?val:cnt).filter(([n])=>isVariante(n)).sort(sortFn);
   const sorted = [...normali, ...varianti];
-  
-  const maxVal = piattiSortBy === 'val' 
-    ? (sorted[0]?.[1]||1)
-    : (sorted.reduce((m,[n])=>Math.max(m,cnt[n]||0),1));
+  const maxVal = piattiSortBy === 'val' ? (sorted[0]?.[1]||1) : (sorted.reduce((m,[n])=>Math.max(m,cnt[n]||0),1));
 
   const piattiEl = document.getElementById('piattiList');
   if (piattiEl) {
-    // Add sort buttons if not present
     const container = piattiEl.closest('.card');
     if (container && !container.querySelector('.piatti-sort-btn')) {
       const titleEl = container.querySelector('.card-title');
@@ -1125,10 +1157,7 @@ function renderPiatti(){
       return `<div class="bar-row">
         <div class="bar-name">${n}</div>
         <div class="bar-bg"><div class="bar-fill" style="width:${barW}%;background:#30d158;"></div></div>
-        <div class="bar-val" style="display:flex;gap:8px;">
-          <span>${pz} pz</span>
-          <span style="color:var(--text3)">€${v.toFixed(2)}</span>
-        </div>
+        <div class="bar-val" style="display:flex;gap:8px;"><span>${pz} pz</span><span style="color:var(--text3)">€${v.toFixed(2)}</span></div>
       </div>`;
     }).join('') : '<div class="empty">Nessun dato</div>';
   }
@@ -1137,10 +1166,8 @@ function renderPiatti(){
   const ctxCat = document.getElementById('chartCat');
   if(ctxCat) charts.cat=new Chart(ctxCat,{type:'doughnut',data:{labels:top6.map(c=>c[0]),datasets:[{data:top6.map(c=>c[1]),backgroundColor:PAL}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}}});
 
-  // Statistiche categorie da Supabase
   const catEl = document.getElementById('catStats');
   if (catEl) {
-    // Calcola categorie dal periodo corrente usando allMT
     const catMap = {};
     allMT.forEach(r => {
       if (!r.categoria) return;
@@ -1151,7 +1178,6 @@ function renderPiatti(){
     const catSorted = Object.entries(catMap).sort((a,b)=>b[1].pz-a[1].pz);
     const totPz = catSorted.reduce((a,[,v])=>a+v.pz,0)||1;
     const totVal = catSorted.reduce((a,[,v])=>a+v.val,0)||1;
-    
     if (catSorted.length) {
       catEl.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:13px;">
         <thead><tr style="border-bottom:2px solid var(--border);">
@@ -1177,28 +1203,6 @@ function renderPiatti(){
           <td style="padding:6px 8px;text-align:right">${fmt(totVal)}</td>
           <td style="padding:6px 8px;text-align:right;color:var(--text3)">100%</td>
         </tr></tfoot>
-      </table>`;
-    } else if (allCAT.length) {
-      // Fallback: usa dati storici da Supabase
-      const totPzS = allCAT.reduce((a,r)=>a+(r.pezzi||0),0)||1;
-      const totValS = allCAT.reduce((a,r)=>a+(r.valore||0),0)||1;
-      catEl.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:13px;">
-        <thead><tr style="border-bottom:2px solid var(--border);">
-          <th style="text-align:left;padding:6px 8px;color:var(--text3)">Categoria</th>
-          <th style="text-align:right;padding:6px 8px;color:var(--text3)">Pezzi</th>
-          <th style="text-align:right;padding:6px 8px;color:var(--text3)">%</th>
-          <th style="text-align:right;padding:6px 8px;color:var(--text3)">Valore €</th>
-          <th style="text-align:right;padding:6px 8px;color:var(--text3)">%</th>
-        </tr></thead>
-        <tbody>${allCAT.map((r,i)=>`
-          <tr style="border-bottom:1px solid var(--border);${i%2===0?'background:var(--bg);':''}">
-            <td style="padding:6px 8px;font-weight:500">${r.categoria}</td>
-            <td style="padding:6px 8px;text-align:right">${Math.round(r.pezzi||0)}</td>
-            <td style="padding:6px 8px;text-align:right;color:var(--text3)">${((r.pezzi||0)/totPzS*100).toFixed(1)}%</td>
-            <td style="padding:6px 8px;text-align:right">${fmt(r.valore||0)}</td>
-            <td style="padding:6px 8px;text-align:right;color:var(--text3)">${((r.valore||0)/totValS*100).toFixed(1)}%</td>
-          </tr>`).join('')}
-        </tbody>
       </table>`;
     } else {
       catEl.innerHTML = '<div class="empty">Nessun dato categorie disponibile</div>';
@@ -1235,8 +1239,8 @@ function renderFasce(){
   document.getElementById('piccoCSub').textContent=pc?pc[1]+' documenti':'';
 }
 
-// ── CONFRONTO STATE ────────────────────────────────────────────────────────
-let cfrMode = 'settimana'; // settimana | mese | giorno_settimana | date
+// ── CONFRONTO ──────────────────────────────────────────────────────────────
+let cfrMode = 'settimana';
 const GIORNI_IT = ['Dom','Lun','Mar','Mer','Gio','Ven','Sab'];
 const MESI_IT = ['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'];
 
@@ -1293,7 +1297,6 @@ function getCfrDateRange(anno) {
     return { da: fd(da), a: fd(a) };
   }
   if (cfrMode === 'giorno_settimana') {
-    // Ultimi 8 occorrenze del giorno selezionato
     const dow = parseInt(document.getElementById('cfrDow')?.value||1);
     const dates = [];
     const d = new Date(oggi); d.setFullYear(anno);
@@ -1305,7 +1308,6 @@ function getCfrDateRange(anno) {
     const da = document.getElementById('cfrDa')?.value;
     const a = document.getElementById('cfrA')?.value;
     if (!da||!a) return null;
-    // Shift to selected year
     const daDt = new Date(da); daDt.setFullYear(anno);
     const aDt = new Date(a); aDt.setFullYear(anno);
     return { da: fd(daDt), a: fd(aDt) };
@@ -1326,21 +1328,13 @@ async function renderConfronto() {
   if (!anni.length) return;
   renderMeteoSetup('meteoSetupCard');
 
-  // Raccoglie dati per ogni anno selezionato
   const annoData = {};
   const allDays = new Set();
-
   for (const anno of anni) {
     const range = getCfrDateRange(anno);
     if (!range) continue;
-    let days = [];
-    if (range.dates) {
-      days = range.dates;
-    } else {
-      days = getDaysInRange(range.da, range.a);
-    }
-    const incassi = {};
-    const coperti = {};
+    let days = range.dates ? range.dates : getDaysInRange(range.da, range.a);
+    const incassi = {}, coperti = {};
     days.forEach(g => {
       const dayMF = allMF.filter(r=>r.data===g);
       incassi[g] = dayMF.reduce((a,r)=>a+(r.totale||0),0);
@@ -1354,24 +1348,20 @@ async function renderConfronto() {
     annoData[anno] = { days, incassi, coperti, range };
   }
 
-  // Fetch meteo per anno corrente
   const annoCorrente = anni[0];
   const rangeCorrente = getCfrDateRange(annoCorrente);
   let meteo = {};
   if (rangeCorrente && meteoCords) {
     if (rangeCorrente.dates) {
-      const daM = rangeCorrente.dates[0], aM = rangeCorrente.dates[rangeCorrente.dates.length-1];
-      meteo = await fetchMeteo(daM, aM);
+      meteo = await fetchMeteo(rangeCorrente.dates[0], rangeCorrente.dates[rangeCorrente.dates.length-1]);
     } else {
       meteo = await fetchMeteo(rangeCorrente.da, rangeCorrente.a);
     }
   }
 
-  // KPI
   const kpiEl = document.getElementById('kpiConfronto');
   kpiEl.innerHTML = anni.map((anno,i) => {
-    const d = annoData[anno];
-    if (!d) return '';
+    const d = annoData[anno]; if (!d) return '';
     const totInc = d.days.reduce((a,g)=>a+(d.incassi[g]||0),0);
     const totCop = d.days.reduce((a,g)=>a+(d.coperti[g]||0),0);
     const media = totCop>0?(totInc/totCop):0;
@@ -1382,7 +1372,6 @@ async function renderConfronto() {
     </div>`;
   }).join('');
 
-  // Meteo bar (solo anno corrente)
   const meteoCard = document.getElementById('meteoDayCard');
   const meteoDayBar = document.getElementById('meteoDayBar');
   const daysC = annoData[annoCorrente]?.days || [];
@@ -1402,16 +1391,13 @@ async function renderConfronto() {
     meteoCard.style.display = 'none';
   }
 
-  // Labels asse X (usa giorni dell'anno base)
-  const baseAnno = anni[0];
-  const baseDays = annoData[baseAnno]?.days || [];
+  const baseDays = annoData[anni[0]]?.days || [];
   const labels = baseDays.map(g => {
     const d = new Date(g+'T12:00:00');
     if (cfrMode==='mese') return d.getDate()+'';
     return GIORNI_IT[d.getDay()]+' '+d.getDate();
   });
 
-  // Grafico incassi
   const ctxC = document.getElementById('chartConfronto');
   if(ctxC && charts.confronto) { charts.confronto.destroy(); delete charts.confronto; }
   if(ctxC) {
@@ -1424,11 +1410,8 @@ async function renderConfronto() {
           data: (annoData[anno]?.days||[]).map(g=>annoData[anno].incassi[g]||0),
           borderColor: ANNO_COLORS[i],
           backgroundColor: ANNO_COLORS[i]+'15',
-          fill: i===0,
-          tension: 0.4,
-          borderWidth: i===0?2.5:1.5,
-          pointRadius: 3,
-          borderDash: i===0?[]:[5,4]
+          fill: i===0, tension: 0.4, borderWidth: i===0?2.5:1.5,
+          pointRadius: 3, borderDash: i===0?[]:[5,4]
         }))
       },
       options: {
@@ -1439,7 +1422,6 @@ async function renderConfronto() {
     });
   }
 
-  // Tabella dettaglio
   const hasCoperti = daysC.some(g=>annoData[annoCorrente]?.coperti[g]>0);
   const rows = baseDays.map(g => {
     const d = new Date(g+'T12:00:00');
@@ -1448,20 +1430,13 @@ async function renderConfronto() {
     const meteoCell = m ? `${meteoIcon(m.wmo)} ${m.tmax}°/${m.tmin}° ${m.prec>0.5?'💧'+m.prec+'mm':''}` : '—';
     const incCells = anni.map(anno => `<td style="text-align:right">${fmt(annoData[anno]?.incassi[g]||0)}</td>`).join('');
     const copCells = hasCoperti ? anni.map(anno => `<td style="text-align:right">${annoData[anno]?.coperti[g]||0}</td>`).join('') : '';
-    // Delta% tra primo e secondo anno
     let deltaCell = '';
     if (anni.length>=2) {
       const v1=annoData[anni[0]]?.incassi[g]||0, v2=annoData[anni[1]]?.incassi[g]||0;
       const dlt = v2>0?Math.round((v1-v2)/v2*100):null;
       deltaCell = `<td style="text-align:right">${dlt!==null?`<span class="${dlt>=0?'delta-pos':'delta-neg'}">${dlt>=0?'+':''}${dlt}%</span>`:'—'}</td>`;
     }
-    return `<tr>
-      <td>${dayLabel}</td>
-      <td>${meteoCell}</td>
-      ${incCells}
-      ${copCells}
-      ${deltaCell}
-    </tr>`;
+    return `<tr><td>${dayLabel}</td><td>${meteoCell}</td>${incCells}${copCells}${deltaCell}</tr>`;
   }).join('');
 
   const incHeaders = anni.map((a,i)=>`<th style="text-align:right;color:${ANNO_COLORS[i]}">€ ${a}</th>`).join('');
@@ -1470,19 +1445,15 @@ async function renderConfronto() {
 
   document.getElementById('confrontoTable').innerHTML = `
     <table class="confronto-table">
-      <thead><tr>
-        <th>Giorno</th><th>Meteo</th>
-        ${incHeaders}${copHeaders}${deltaHeader}
-      </tr></thead>
+      <thead><tr><th>Giorno</th><th>Meteo</th>${incHeaders}${copHeaders}${deltaHeader}</tr></thead>
       <tbody>${rows}</tbody>
     </table>`;
 }
 
-
 function renderTavoli(){
   renderAnnoCfrBar('annoCfr_page_tavoli');
   const mf=getMF();
-  const {col,pra,cen,colN,praN,cenN}=copertiPerServizio();
+  const {colN,praN,cenN}=copertiPerServizio();
   const totale=mf.reduce((a,r)=>a+(r.totale||0),0);
   const totC=colN+praN+cenN;
   document.getElementById('tavServGrid').innerHTML=`
@@ -1558,29 +1529,22 @@ async function renderTavoliAperti(){
   const listEl = document.getElementById('tavoliApertiList');
   const kpiEl = document.getElementById('kpiTavoliAperti');
   if (listEl) listEl.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text3)">Caricamento...</div>';
-
-  // Legge tavoli_aperti da Supabase (sincronizzata ogni 10 min dallo script)
   let tavoli = [];
   try {
-    const r = await fetch(
-      `${SB_URL}/rest/v1/tavoli_aperti?order=codice.asc`,
-      { headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY } }
-    );
+    const r = await fetch(`${SB_URL}/rest/v1/tavoli_aperti?order=codice.asc`,
+      { headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY } });
     if (r.ok) tavoli = await r.json();
   } catch(e) {
-    if (listEl) listEl.innerHTML = '<div class="empty" style="padding:20px;text-align:center">Errore caricamento dati</div>';
+    if (listEl) listEl.innerHTML = '<div class="empty">Errore caricamento dati</div>';
     return;
   }
-
   const aperti = tavoli.filter(t => t.aperto);
   const totCoperti = aperti.reduce((a,t)=>a+(t.coperti||0),0);
   const totaleAperti = aperti.reduce((a,t)=>a+(t.totconto||0),0);
-
   if (kpiEl) kpiEl.innerHTML = `
     <div class="kpi green"><div class="label">Tavoli aperti</div><div class="value">${aperti.length}</div><div class="sub">${totCoperti} coperti</div></div>
     <div class="kpi blue"><div class="label">Da incassare</div><div class="value">${fmt(totaleAperti)}</div></div>
     <div class="kpi"><div class="label">Aggiornato alle</div><div class="value">${now.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}</div><div class="sub">sync ogni 10 min</div></div>`;
-
   function calcolaDurata(ora) {
     if (!ora) return '—';
     const parts = ora.split(':');
@@ -1591,7 +1555,6 @@ async function renderTavoliAperti(){
     const durMin = Math.floor(durMs / 60000);
     return durMin >= 60 ? Math.floor(durMin/60)+'h '+('0'+durMin%60).slice(-2)+'m' : durMin+'m';
   }
-
   let html = '';
   aperti.sort((a,b)=>(a.posizione||'').localeCompare(b.posizione||'')).forEach(t => {
     const oraStr = t.oraoccupaz ? t.oraoccupaz.substring(0,5) : '—';
@@ -1622,9 +1585,7 @@ function renderAnomalie(){
   const mf=getMF();
   const storni=mf.filter(r=>r.totale<0);
   const negativi=allMP.filter(r=>r.importo<0);
-  // Usa anomalie reali da Supabase (sync da LINEEMOVFISC)
   const scontiDoc=allAN.filter(r=>r.tipo==='sconto');
-
   const tipoLabel={1:'STORNO',2:'CAMBIO PREZZO',3:'SCONTO',4:'ANNULL.'};
   const tipoBadge={1:'b-storno',2:'b-cambio',3:'b-sconto',4:'b-annull'};
 
@@ -1634,70 +1595,41 @@ function renderAnomalie(){
     <div class="kpi" style="border-top:3px solid #bf5af2"><div class="label">Sconti</div><div class="value">${scontiDoc.length}</div><div class="sub">${fmt(scontiDoc.reduce((a,r)=>a+Math.abs(r.importo||0),0))}</div></div>
     <div class="kpi blue"><div class="label">Log modifiche</div><div class="value">${allLM.length}</div></div>`;
 
-  // Costruisce tutti gli items
   const logItems = allLM.map(r=>({
-    tipo: 'modifica',
-    badge: tipoBadge[r.tipo]||'b-sconto',
-    label: tipoLabel[r.tipo]||'MODIFICA',
-    desc: (r.motivazione_descr?r.motivazione_descr+' — ':'')+'Tavolo '+(r.tavolo_numero||'?')+(r.qtastorno?' · Qta: '+r.qtastorno:'')+(r.valorestorno?' · €'+Math.abs(r.valorestorno):''),
-    meta: (r.dataora?new Date(r.dataora).toLocaleString('it-IT',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'')+(r.cameriere_id?' · '+nomeCameriere(r.cameriere_id):''),
-    ts: r.dataora||''
+    tipo:'modifica', badge:tipoBadge[r.tipo]||'b-sconto', label:tipoLabel[r.tipo]||'MODIFICA',
+    desc:(r.motivazione_descr?r.motivazione_descr+' — ':'')+'Tavolo '+(r.tavolo_numero||'?')+(r.qtastorno?' · Qta: '+r.qtastorno:'')+(r.valorestorno?' · €'+Math.abs(r.valorestorno):''),
+    meta:(r.dataora?new Date(r.dataora).toLocaleString('it-IT',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'')+(r.cameriere_id?' · '+nomeCameriere(r.cameriere_id):''),
+    ts:r.dataora||''
   }));
-
   const storniItems = storni.map(r=>({
-    tipo: 'storno',
-    badge: 'b-storno', label: 'STORNO',
-    desc: 'Doc. negativo #'+(r.numero||'?')+' — '+fmt(r.totale),
-    meta: (r.data||'')+(r.idcameriere?' · '+nomeCameriere(r.idcameriere):''),
-    ts: r.ora||r.data||''
+    tipo:'storno', badge:'b-storno', label:'STORNO',
+    desc:'Doc. negativo #'+(r.numero||'?')+' — '+fmt(r.totale),
+    meta:(r.data||'')+(r.idcameriere?' · '+nomeCameriere(r.idcameriere):''), ts:r.ora||r.data||''
   }));
-
   const negativiItems = negativi.map(r=>({
-    tipo: 'negativo',
-    badge: 'b-storno', label: 'PAG. NEG.',
-    desc: (r.desc_pagamento||'Pagamento negativo')+' — '+fmt(r.importo),
-    meta: (r.data||'')+(r.idcameriere?' · '+nomeCameriere(r.idcameriere):''),
-    ts: r.data||''
+    tipo:'negativo', badge:'b-storno', label:'PAG. NEG.',
+    desc:(r.desc_pagamento||'Pagamento negativo')+' — '+fmt(r.importo),
+    meta:(r.data||'')+(r.idcameriere?' · '+nomeCameriere(r.idcameriere):''), ts:r.data||''
   }));
-
   const scontiItems = scontiDoc.map(r=>({
-    tipo: 'sconto',
-    badge: 'b-sconto', label: 'SCONTO',
-    desc: (r.descrizione||'Sconto')+' — '+fmt(Math.abs(r.importo||0))+(r.tavolo?' · Tavolo '+r.tavolo:''),
-    meta: (r.dataora?new Date(r.dataora).toLocaleString('it-IT',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'')+(r.idcameriere?' · '+nomeCameriere(r.idcameriere):''),
-    ts: r.dataora||''
+    tipo:'sconto', badge:'b-sconto', label:'SCONTO',
+    desc:(r.descrizione||'Sconto')+' — '+fmt(Math.abs(r.importo||0))+(r.tavolo?' · Tavolo '+r.tavolo:''),
+    meta:(r.dataora?new Date(r.dataora).toLocaleString('it-IT',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'')+(r.idcameriere?' · '+nomeCameriere(r.idcameriere):''),
+    ts:r.dataora||''
   }));
 
   let all = [...logItems, ...storniItems, ...negativiItems, ...scontiItems];
-
-  // Applica filtro tipo
-  if (anomFiltType !== 'all') {
-    all = all.filter(a => a.tipo === anomFiltType);
-  }
-
-  // Applica filtro parola chiave
+  if (anomFiltType !== 'all') all = all.filter(a => a.tipo === anomFiltType);
   const kw = (document.getElementById('anomSearch')?.value||'').toLowerCase().trim();
-  if (kw) {
-    all = all.filter(a =>
-      (a.desc||'').toLowerCase().includes(kw) ||
-      (a.label||'').toLowerCase().includes(kw) ||
-      (a.meta||'').toLowerCase().includes(kw)
-    );
-  }
-
-  // Ordina per data decrescente
+  if (kw) all = all.filter(a => (a.desc||'').toLowerCase().includes(kw)||(a.label||'').toLowerCase().includes(kw)||(a.meta||'').toLowerCase().includes(kw));
   all.sort((a,b) => (b.ts||'').localeCompare(a.ts||''));
 
   const listEl = document.getElementById('anomalyList');
   if (!listEl) return;
-
   if (!all.length) {
-    listEl.innerHTML = kw
-      ? `<div class="empty">Nessun risultato per "<strong>${kw}</strong>"</div>`
-      : '<div class="empty">Nessuna anomalia nel periodo</div>';
+    listEl.innerHTML = kw ? `<div class="empty">Nessun risultato per "<strong>${kw}</strong>"</div>` : '<div class="empty">Nessuna anomalia nel periodo</div>';
     return;
   }
-
   listEl.innerHTML = all.slice(0,100).map(a=>`
     <div class="anom-row">
       <span class="anom-badge ${a.badge}">${a.label}</span>
