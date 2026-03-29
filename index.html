@@ -730,12 +730,12 @@ async function loadAll() {
   document.getElementById('syncInfo').textContent='...';
   const{da,a}=getRange();
   try {
-    [allMF,allMT,allMP,allLM,allCAM,allAN,allCAT] = await Promise.all([
+    [allMF,allMT,allMP,allLM,allAN,allCAT,allCAM] = await Promise.all([
       sbGet('movfisc',{'data':'gte.'+da,'order':'data.asc'}),
       sbGet('movtav',{'dataoracomanda':'gte.'+da+'T00:00:00','order':'dataoracomanda.asc'}),
       sbGet('movpag',{'data':'gte.'+da,'order':'data.asc'}),
       sbGet('log_modifiche',{'order':'dataora.desc'}).catch(()=>[]),
-      sbGet('anomalie',{'data':'gte.'+da,'order':'dataora.desc'}).catch(()=[]),
+      sbGet('anomalie',{'data':'gte.'+da,'order':'dataora.desc'}).catch(()=>[]),
       sbGet('categorie',{'order':'pezzi.desc'}).catch(()=>[]),
       sbGet('camerieri',{'order':'id.asc'}).catch(()=>[])
     ]);
