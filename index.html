@@ -626,16 +626,15 @@ let _canaleMap = null; // cache ricostruita dopo ogni loadAll()
  * @returns {string}  - 'tavoli' | 'immediato' | 'asporto' | 'domicilio' | 'fattura'
  */
 function getCanale(r) {
-  if (r.tipo === 'F') return 'fattura';
+  // Il batch popola r.canale correttamente su Supabase — è la fonte primaria.
+  // Valori possibili: 'tavoli', 'immediato', 'asporto', 'domicilio'
+  // Le fatture ora hanno il canale reale (tavoli/banco/ecc.), non più 'fattura'.
+  if (r.canale) return r.canale;
+  // Fallback per record storici senza canale valorizzato
   const tav = r.tavolo;
-  if (tav == null) return 'immediato';
-  if (tav >= 1 && tav <= 999)    return 'tavoli';
-  if (tav >= 1001 && tav <= 1040) return 'immediato';
-  if (tav < 0) {
-    if (!_canaleMap) _canaleMap = buildCanaleMap();
-    return _canaleMap[r.codice] || 'asporto';
-  }
-  return 'immediato'; // fallback
+  if (tav != null && tav >= 1 && tav <= 999)    return 'tavoli';
+  if (tav != null && tav >= 1001) return 'immediato';
+  return 'immediato';
 }
 
 /**
