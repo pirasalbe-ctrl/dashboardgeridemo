@@ -426,6 +426,11 @@ body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--bg);
   <div class="page" id="page-piatti">
     <div id="annoCfr_page_piatti"></div>
     <div class="card">
+      <div class="card-title">Statistiche per categoria</div>
+      <div id="catStats"></div>
+    </div>
+    <div class="card"><div class="card-title">Top categorie</div><div class="chart-wrap" style="height:210px;"><canvas id="chartCat"></canvas></div></div>
+    <div class="card">
       <div class="card-title">Più venduti</div>
       <div style="margin-bottom:10px;">
         <input id="piattiSearch" type="text" placeholder="🔍 Cerca piatto..."
@@ -434,11 +439,6 @@ body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--bg);
       </div>
       <div id="piattiList"></div>
     </div>
-    <div class="card">
-      <div class="card-title">Statistiche per categoria</div>
-      <div id="catStats"></div>
-    </div>
-    <div class="card"><div class="card-title">Top categorie</div><div class="chart-wrap" style="height:210px;"><canvas id="chartCat"></canvas></div></div>
   </div>
 
   <!-- FASCE -->
@@ -969,18 +969,24 @@ function renderHome(){
   const totPranzo = totale>0&&totCop>0 ? (praN/totCop*totale) : 0;
   const totCena   = totale>0&&totCop>0 ? (cenN/totCop*totale) : 0;
 
+  const mediaColaz = colN>0 ? totColaz/colN : 0;
+  const mediaPranzo = praN>0 ? totPranzo/praN : 0;
+  const mediaCena   = cenN>0 ? totCena/cenN : 0;
   document.getElementById('servizioGrid').innerHTML=`
     <div class="serv-card">
       <div class="s-icon">☀️</div><div class="s-label">Colazione</div>
-      <div class="s-val">${fmtN(colN)}</div><div class="s-totale">${fmt(totColaz)}</div><div class="s-sub">coperti</div>
+      <div class="s-val">${fmtN(colN)}</div><div class="s-totale">${fmt(totColaz)}</div>
+      <div class="s-sub">coperti · media ${fmt(mediaColaz)}</div>
     </div>
     <div class="serv-card">
       <div class="s-icon">🌤️</div><div class="s-label">Pranzo</div>
-      <div class="s-val">${fmtN(praN)}</div><div class="s-totale">${fmt(totPranzo)}</div><div class="s-sub">coperti</div>
+      <div class="s-val">${fmtN(praN)}</div><div class="s-totale">${fmt(totPranzo)}</div>
+      <div class="s-sub">coperti · media ${fmt(mediaPranzo)}</div>
     </div>
     <div class="serv-card">
       <div class="s-icon">🌙</div><div class="s-label">Cena</div>
-      <div class="s-val">${fmtN(cenN)}</div><div class="s-totale">${fmt(totCena)}</div><div class="s-sub">coperti</div>
+      <div class="s-val">${fmtN(cenN)}</div><div class="s-totale">${fmt(totCena)}</div>
+      <div class="s-sub">coperti · media ${fmt(mediaCena)}</div>
     </div>`;
 
   document.getElementById('kpiHome2').innerHTML=`
@@ -1532,10 +1538,13 @@ function renderTavoli(){
   const {colN,praN,cenN}=copertiPerServizio();
   const totale=mf.reduce((a,r)=>a+(r.totale||0),0);
   const totC=colN+praN+cenN;
+  const totColazT = totC>0?colN/totC*totale:0;
+  const totPranzoT = totC>0?praN/totC*totale:0;
+  const totCenaT = totC>0?cenN/totC*totale:0;
   document.getElementById('tavServGrid').innerHTML=`
-    <div class="serv-card"><div class="s-icon">☀️</div><div class="s-label">Colazione</div><div class="s-val">${fmtN(colN)}</div><div class="s-totale">${fmt(totC>0?colN/totC*totale:0)}</div><div class="s-sub">coperti</div></div>
-    <div class="serv-card"><div class="s-icon">🌤️</div><div class="s-label">Pranzo</div><div class="s-val">${fmtN(praN)}</div><div class="s-totale">${fmt(totC>0?praN/totC*totale:0)}</div><div class="s-sub">coperti</div></div>
-    <div class="serv-card"><div class="s-icon">🌙</div><div class="s-label">Cena</div><div class="s-val">${fmtN(cenN)}</div><div class="s-totale">${fmt(totC>0?cenN/totC*totale:0)}</div><div class="s-sub">coperti</div></div>`;
+    <div class="serv-card"><div class="s-icon">☀️</div><div class="s-label">Colazione</div><div class="s-val">${fmtN(colN)}</div><div class="s-totale">${fmt(totColazT)}</div><div class="s-sub">coperti · media ${fmt(colN>0?totColazT/colN:0)}</div></div>
+    <div class="serv-card"><div class="s-icon">🌤️</div><div class="s-label">Pranzo</div><div class="s-val">${fmtN(praN)}</div><div class="s-totale">${fmt(totPranzoT)}</div><div class="s-sub">coperti · media ${fmt(praN>0?totPranzoT/praN:0)}</div></div>
+    <div class="serv-card"><div class="s-icon">🌙</div><div class="s-label">Cena</div><div class="s-val">${fmtN(cenN)}</div><div class="s-totale">${fmt(totCenaT)}</div><div class="s-sub">coperti · media ${fmt(cenN>0?totCenaT/cenN:0)}</div></div>`;
   document.getElementById('kpiTavoli').innerHTML=`
     <div class="kpi"><div class="label">Tot. coperti</div><div class="value">${fmtN(totC)}</div></div>
     <div class="kpi blue"><div class="label">Media coperto</div><div class="value">${fmt(totC>0?totale/totC:0)}</div></div>`;
