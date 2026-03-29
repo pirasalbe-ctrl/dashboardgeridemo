@@ -7,6 +7,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
 :root {
   --bg: #f2f2f7;
@@ -109,18 +112,36 @@ body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--bg);
   border: none; border-radius: 10px; background: var(--blue);
   color: #fff; cursor: pointer;
 }
+.export-bar {
+  display: flex; gap: 6px; align-items: center; margin-left: auto;
+}
+.exp-btn {
+  font-size: 12px; font-weight: 500; padding: 6px 12px;
+  border: 1.5px solid var(--border); border-radius: 20px;
+  background: var(--surface); color: var(--text2);
+  cursor: pointer; transition: all 0.2s; white-space: nowrap;
+  display: flex; align-items: center; gap: 5px;
+}
+.exp-btn:hover { background: var(--text); color: #fff; border-color: var(--text); }
+.exp-btn:active { transform: scale(0.96); }
+.time-range { display: flex; gap: 4px; align-items: center; }
+.time-range input {
+  font-size: 12px; padding: 5px 8px; border: 1.5px solid var(--border);
+  border-radius: 8px; font-family: 'DM Sans', sans-serif;
+  background: var(--surface); color: var(--text); width: 80px;
+}
+.time-range label { font-size: 11px; color: var(--text3); white-space: nowrap; }
 
 /* NAV */
 .nav {
   background: rgba(255,255,255,0.85);
   backdrop-filter: blur(20px);
   border-bottom: 1px solid var(--border);
-  padding: 0 16px;
-  display: flex; overflow-x: auto; scrollbar-width: none; gap: 2px;
+  padding: 4px 8px;
+  display: flex; flex-wrap: wrap; gap: 2px;
 }
-.nav::-webkit-scrollbar { display: none; }
 .nav-btn {
-  font-size: 13px; font-weight: 500; padding: 12px 16px;
+  font-size: 12px; font-weight: 500; padding: 8px 12px;
   border: none; background: none; color: var(--text2);
   cursor: pointer; white-space: nowrap;
   border-bottom: 2.5px solid transparent;
@@ -362,12 +383,21 @@ body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--bg);
     <span class="anno-sel-label">Anni:</span>
     <div id="annoSelBtns" style="display:flex;gap:4px;"></div>
   </div>
+  <div class="time-range">
+    <label>Ore</label>
+    <input type="time" id="oraInizio" value="00:00" onchange="renderCurrentPage()">
+    <span style="color:var(--text3);font-size:11px">→</span>
+    <input type="time" id="oraFine" value="23:59" onchange="renderCurrentPage()">
+  </div>
+  <div class="export-bar">
+    <button class="exp-btn" onclick="exportExcel()">📊 Excel</button>
+    <button class="exp-btn" onclick="exportPDF()">📄 PDF</button>
+  </div>
 </div>
 
 <div class="nav">
   <button class="nav-btn active" onclick="goPage('home',this)">Home</button>
   <button class="nav-btn" onclick="goPage('venduto',this)">Venduto</button>
-  <button class="nav-btn" onclick="goPage('incassi',this)">Incassi</button>
   <button class="nav-btn" onclick="goPage('piatti',this)">Piatti</button>
   <button class="nav-btn" onclick="goPage('fasce',this)">Fasce</button>
   <button class="nav-btn" onclick="goPage('confronto',this)">Confronto</button>
@@ -388,8 +418,9 @@ body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--bg);
       <div class="hero-grid" id="heroGrid"></div>
       <div class="servizio-grid" id="servizioGrid"></div>
       <div class="kpi-grid" id="kpiHome2"></div>
-      <div class="card"><div class="card-title">Incasso per documento</div><div id="docHomeChart"></div></div>
+      <div class="card"><div class="card-title">Documenti</div><div id="docHomeChart"></div></div>
       <div class="card"><div class="card-title">Venduto per canale</div><div id="vendHomeChart"></div></div>
+      <div class="card"><div class="card-title">Metodi di pagamento</div><div id="pagHomeList"></div></div>
     </div>
   </div>
 
@@ -415,12 +446,8 @@ body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--bg);
     </div>
   </div>
 
-  <!-- INCASSI -->
-  <div class="page" id="page-incassi">
-    <div id="annoCfr_page_incassi"></div>
-    <div class="kpi-grid" id="kpiIncassi"></div>
-    <div class="card"><div class="card-title">Andamento</div><div class="chart-wrap" style="height:240px;"><canvas id="chartIncassi"></canvas></div></div>
-  </div>
+  <!-- INCASSI: integrata in pagamenti -->
+  <div class="page" id="page-incassi" style="display:none!important"></div>
 
   <!-- PIATTI -->
   <div class="page" id="page-piatti">
@@ -538,7 +565,7 @@ body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--bg);
     <div class="card"><div class="card-title">Incasso per operatore</div><div class="chart-wrap" style="height:210px;"><canvas id="chartCam"></canvas></div></div>
   </div>
 
-  <!-- PAGAMENTI -->
+  <!-- PAGAMENTI (include incassi) -->
   <div class="page" id="page-pagamenti">
     <div id="annoCfr_page_pagamenti"></div>
     <div class="card">
@@ -547,6 +574,8 @@ body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--bg);
       <div class="chart-wrap" style="height:220px;"><canvas id="chartPag"></canvas></div>
     </div>
     <div class="card"><div id="pagList"></div></div>
+    <div class="kpi-grid" id="kpiIncassi"></div>
+    <div class="card"><div class="card-title">Andamento incassi</div><div class="chart-wrap" style="height:240px;"><canvas id="chartIncassi"></canvas></div></div>
   </div>
 
   <!-- DOCUMENTI -->
@@ -817,7 +846,27 @@ async function loadAll() {
   }
 }
 
-function getMF(){ return showP ? allMF : allMF.filter(r=>r.tipo!=='P'); }
+function getOraRange() {
+  const inizio = document.getElementById('oraInizio')?.value || '00:00';
+  const fine = document.getElementById('oraFine')?.value || '23:59';
+  return { inizio, fine };
+}
+
+function filterByOra(records) {
+  const { inizio, fine } = getOraRange();
+  if (inizio === '00:00' && fine === '23:59') return records;
+  return records.filter(r => {
+    if (!r.ora) return true;
+    // r.ora è ISO "2026-03-29T16:21:00"
+    const t = r.ora.split('T')[1]?.substring(0,5) || r.ora.substring(0,5);
+    return t >= inizio && t <= fine;
+  });
+}
+
+function getMF() {
+  const base = showP ? allMF : allMF.filter(r=>r.tipo!=='P');
+  return filterByOra(base);
+}
 
 // ── METEO ──────────────────────────────────────────────────────────────────
 let meteoCache = {};
@@ -922,7 +971,7 @@ function renderCurrentPage(){
 function renderPage(page){
   Object.values(charts).forEach(c=>{try{c.destroy();}catch(e){}});
   charts={};
-  const fn={home:renderHome,venduto:renderVenduto,incassi:renderIncassi,piatti:renderPiatti,fasce:renderFasce,confronto:renderConfronto,tavoli:renderTavoli,camerieri:renderCamerieri,pagamenti:renderPagamenti,documenti:renderDocumenti,anomalie:renderAnomalie,tavoliaperti:renderTavoliAperti};
+  const fn={home:renderHome,venduto:renderVenduto,piatti:renderPiatti,fasce:renderFasce,confronto:renderConfronto,tavoli:renderTavoli,camerieri:renderCamerieri,pagamenti:renderPagamenti,documenti:renderDocumenti,anomalie:renderAnomalie,tavoliaperti:renderTavoliAperti};
   if(fn[page]) fn[page]();
 }
 
@@ -994,10 +1043,23 @@ function renderHome(){
     <div class="kpi"><div class="label">Media doc.</div><div class="value">${fmt(mediaDoc)}</div></div>
     <div class="kpi"><div class="label">Tot. coperti</div><div class="value">${fmtN(totCop)}</div></div>`;
 
-  const docItems=[{l:'Scontrini (S)',v:totS,c:'#30d158'},{l:'Fatture (F)',v:totF,c:'#0071e3'},...(showP?[{l:'Conti (P)',v:totP,c:'#ff9f0a'}]:[])];
+  const nS=mf.filter(r=>r.tipo==='S').length, nF=mf.filter(r=>r.tipo==='F').length, nP=allMF.filter(r=>r.tipo==='P').length;
+  const docItems=[
+    {l:'Scontrini',v:totS,n:nS,c:'#30d158'},
+    {l:'Fatture',v:totF,n:nF,c:'#0071e3'},
+    ...(showP?[{l:'Conti (P)',v:totP,n:nP,c:'#ff9f0a'}]:[])
+  ];
   const maxD=Math.max(...docItems.map(i=>i.v),1);
   document.getElementById('docHomeChart').innerHTML=docItems.map(i=>`
-    <div class="bar-row"><div class="bar-name">${i.l}</div><div class="bar-bg"><div class="bar-fill" style="width:${Math.round(i.v/maxD*100)}%;background:${i.c};"></div></div><div class="bar-val">${fmt(i.v)}</div></div>`).join('');
+    <div class="bar-row">
+      <div class="bar-name">${i.l}</div>
+      <div class="bar-bg"><div class="bar-fill" style="width:${Math.round(i.v/maxD*100)}%;background:${i.c};"></div></div>
+      <div style="text-align:right;flex-shrink:0;font-family:'DM Mono',monospace;font-size:12px;min-width:130px">
+        <span style="font-weight:600">${fmt(i.v)}</span>
+        <span style="color:var(--text3);margin-left:6px">${i.n} doc</span>
+        <span style="color:var(--text3);margin-left:4px">· ${fmt(i.n>0?i.v/i.n:0)}/doc</span>
+      </div>
+    </div>`).join('');
 
   // Venduto per canale — usa r.canale già calcolato da enrichCanali()
   const canali    = ['tavoli','immediato','asporto','domicilio'];
@@ -1011,6 +1073,17 @@ function renderHome(){
       <div class="bar-val">${fmt(cVals[i])}</div>
     </div>`).join('');
 
+  // Mini pagamenti sulla home
+  const ps2={};
+  allMP.forEach(r=>{const k=r.desc_pagamento||'Altro';ps2[k]=(ps2[k]||0)+(r.importo||0);});
+  const sortedP2=Object.entries(ps2).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]);
+  const totP2=sortedP2.reduce((a,[,v])=>a+v,0);
+  const pagHomeEl=document.getElementById('pagHomeList');
+  if(pagHomeEl){
+    pagHomeEl.innerHTML=sortedP2.length?sortedP2.map(([n,v],i)=>`
+      <div class="bar-row"><div class="bar-name">${n}</div><div class="bar-bg"><div class="bar-fill" style="width:${totP2>0?Math.round(v/totP2*100):0}%;background:${PAL[i%PAL.length]};"></div></div><div class="bar-val">${fmt(v)}</div></div>`).join('')
+    :'<div class="empty">Nessun dato</div>';
+  }
   document.getElementById('homeLoading').style.display='none';
   document.getElementById('homeContent').style.display='block';
 }
@@ -1145,7 +1218,7 @@ function renderPiatti(){
   const sortFn = (a,b) => b[1]-a[1];
   const piattiKw = (document.getElementById('piattiSearch')?.value||'').toLowerCase().trim();
   const normali = Object.entries(piattiSortBy==='val'?val:cnt).filter(([n])=>!isVariante(n)&&(!piattiKw||n.toLowerCase().includes(piattiKw))).sort(sortFn).slice(0,30);
-  const varianti = Object.entries(piattiSortBy==='val'?val:cnt).filter(([n])=>isVariante(n)).sort(sortFn);
+  const varianti = Object.entries(piattiSortBy==='val'?val:cnt).filter(([n])=>isVariante(n)&&(!piattiKw||n.toLowerCase().includes(piattiKw))).sort(sortFn);
   const sorted = [...normali, ...varianti];
   const maxVal = piattiSortBy === 'val' ? (sorted[0]?.[1]||1) : (sorted.reduce((m,[n])=>Math.max(m,cnt[n]||0),1));
 
@@ -1583,6 +1656,28 @@ function renderPagamenti(){
   if(sorted.length){
     charts.pag=new Chart(document.getElementById('chartPag'),{type:'doughnut',data:{labels:sorted.map(([n])=>n),datasets:[{data:sorted.map(([,v])=>v),backgroundColor:PAL,borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}}});
   }
+  // Incassi integrati
+  renderIncassiInPagamenti();
+}
+
+function renderIncassiInPagamenti(){
+  const mf=getMF();
+  const giorni=[...new Set(mf.map(r=>r.data))].sort();
+  const totale=mf.reduce((a,r)=>a+(r.totale||0),0);
+  const media=giorni.length>0?totale/giorni.length:0;
+  const perG=giorni.map(g=>mf.filter(r=>r.data===g).reduce((a,r)=>a+(r.totale||0),0));
+  const maxG=Math.max(...perG,0);
+  document.getElementById('kpiIncassi').innerHTML=`
+    <div class="kpi"><div class="label">Totale incassato</div><div class="value">${fmt(totale)}</div></div>
+    <div class="kpi"><div class="label">Media giornaliera</div><div class="value">${fmt(media)}</div></div>
+    <div class="kpi green"><div class="label">Giorno migliore</div><div class="value">${giorni[perG.indexOf(maxG)]||'—'}</div><div class="sub">${fmt(maxG)}</div></div>
+    <div class="kpi"><div class="label">N. documenti</div><div class="value">${fmtN(mf.length)}</div></div>`;
+  if(charts.incassi){try{charts.incassi.destroy();}catch(e){}}
+  charts.incassi=new Chart(document.getElementById('chartIncassi'),{type:'bar',data:{labels:giorni,datasets:[
+    {label:'S',data:giorni.map(g=>mf.filter(r=>r.data===g&&r.tipo==='S').reduce((a,r)=>a+(r.totale||0),0)),backgroundColor:'#30d158'},
+    {label:'F',data:giorni.map(g=>mf.filter(r=>r.data===g&&r.tipo==='F').reduce((a,r)=>a+(r.totale||0),0)),backgroundColor:'#0071e3'},
+    ...(showP?[{label:'P',data:giorni.map(g=>allMF.filter(r=>r.data===g&&r.tipo==='P').reduce((a,r)=>a+(r.totale||0),0)),backgroundColor:'#ff9f0a'}]:[])
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{stacked:true},y:{stacked:true}}}});
 }
 
 function renderDocumenti(){
@@ -1753,6 +1848,184 @@ document.getElementById('d1').value=mfa.toISOString().split('T')[0];
 initAnnoSelector();
 loadAll();
 setInterval(loadAll, 60000);
+
+// ── EXPORT ────────────────────────────────────────────────────────────────
+
+function getExportTitle() {
+  const page = document.querySelector('.page.active')?.id?.replace('page-','') || 'dashboard';
+  const{da,a}=getRange();
+  const{inizio,fine}=getOraRange();
+  const timeStr = (inizio!=='00:00'||fine!=='23:59') ? ` ${inizio}-${fine}` : '';
+  return `Geri_${page}_${da}${da!==a?'_'+a:''}${timeStr}`;
+}
+
+function buildExportData() {
+  const page = document.querySelector('.page.active')?.id?.replace('page-','') || '';
+  const mf = getMF();
+  const{da,a}=getRange();
+  const{inizio,fine}=getOraRange();
+  const header = [`Gerì Dashboard — ${page.toUpperCase()}`, `Periodo: ${da}${da!==a?' → '+a:''} ${inizio!=='00:00'||fine!=='23:59'?'Ore: '+inizio+'-'+fine:''}`];
+
+  switch(page) {
+    case 'home':
+    case 'venduto': {
+      const canali=['tavoli','immediato','asporto','domicilio'];
+      const cLabels=['Sala','Banco','Asporto','Domicilio'];
+      const rows=[['Canale','Importo €','Documenti','Media €']];
+      canali.forEach((c,i)=>{
+        const recs=mf.filter(r=>r.canale===c);
+        const val=recs.reduce((a,r)=>a+(r.totale||0),0);
+        rows.push([cLabels[i], val.toFixed(2), recs.length, recs.length>0?(val/recs.length).toFixed(2):0]);
+      });
+      rows.push([]);
+      rows.push(['Tipo','Importo €','Documenti','Media €']);
+      ['S','F','P'].forEach(t=>{
+        const recs=(t==='P'?allMF:mf).filter(r=>r.tipo===t);
+        const val=recs.reduce((a,r)=>a+(r.totale||0),0);
+        if(recs.length>0) rows.push([t==='S'?'Scontrini':t==='F'?'Fatture':'Conti', val.toFixed(2), recs.length, (val/recs.length).toFixed(2)]);
+      });
+      return{header, sheets:[{name:'Venduto per canale', rows}]};
+    }
+    case 'piatti': {
+      const cnt={},val={};
+      allMT.forEach(r=>{if(!r.descrizione)return;cnt[r.descrizione]=(cnt[r.descrizione]||0)+(r.quant||1);val[r.descrizione]=(val[r.descrizione]||0)+((r.quant||1)*(r.prezzo||0));});
+      const rows=[['Piatto','Quantità','Valore €']];
+      Object.entries(cnt).sort((a,b)=>b[1]-a[1]).forEach(([n,q])=>rows.push([n,Math.round(q),(val[n]||0).toFixed(2)]));
+      const catRows=[['Categoria','Pezzi','Valore €']];
+      const catMap={};
+      allMT.forEach(r=>{if(!r.categoria)return;if(!catMap[r.categoria])catMap[r.categoria]={pz:0,val:0};catMap[r.categoria].pz+=(r.quant||1);catMap[r.categoria].val+=(r.quant||1)*(r.prezzo||0);});
+      Object.entries(catMap).sort((a,b)=>b[1].pz-a[1].pz).forEach(([c,v])=>catRows.push([c,Math.round(v.pz),v.val.toFixed(2)]));
+      return{header,sheets:[{name:'Piatti',rows},{name:'Categorie',rows:catRows}]};
+    }
+    case 'camerieri': {
+      const cs={};
+      mf.forEach(r=>{const id=r.idcameriere||0;if(!cs[id])cs[id]={inc:0,doc:0};cs[id].inc+=(r.totale||0);cs[id].doc++;});
+      const rows=[['Operatore','Incasso €','Documenti','Media €']];
+      Object.entries(cs).sort((a,b)=>b[1].inc-a[1].inc).forEach(([id,s])=>rows.push([nomeCameriere(parseInt(id)),s.inc.toFixed(2),s.doc,(s.doc>0?s.inc/s.doc:0).toFixed(2)]));
+      return{header,sheets:[{name:'Camerieri',rows}]};
+    }
+    case 'pagamenti': {
+      const ps={};
+      allMP.forEach(r=>{const k=r.desc_pagamento||'Altro';ps[k]=(ps[k]||0)+(r.importo||0);});
+      const rows=[['Metodo','Importo €']];
+      Object.entries(ps).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]).forEach(([n,v])=>rows.push([n,v.toFixed(2)]));
+      return{header,sheets:[{name:'Pagamenti',rows}]};
+    }
+    case 'documenti': {
+      const rows=[['Tipo','Importo €','Documenti','Media €']];
+      ['S','F','P'].forEach(t=>{
+        const recs=(t==='P'?allMF:mf).filter(r=>r.tipo===t);
+        const val=recs.reduce((a,r)=>a+(r.totale||0),0);
+        if(recs.length>0)rows.push([t==='S'?'Scontrini':t==='F'?'Fatture':'Conti',val.toFixed(2),recs.length,(val/recs.length).toFixed(2)]);
+      });
+      return{header,sheets:[{name:'Documenti',rows}]};
+    }
+    case 'anomalie': {
+      const rows=[['Tipo','Descrizione','Data/Ora','Cameriere']];
+      allLM.forEach(r=>rows.push(['Modifica',(r.motivazione_descr||'')+'Tavolo '+(r.tavolo_numero||'?'),r.dataora||'',nomeCameriere(r.cameriere_id)]));
+      allMF.filter(r=>r.totale<0).forEach(r=>rows.push(['Storno','Doc #'+(r.numero||'?')+' '+r.totale,r.data||'',nomeCameriere(r.idcameriere)]));
+      return{header,sheets:[{name:'Anomalie',rows}]};
+    }
+    case 'fasce': {
+      const oreCnt={};
+      for(let h=6;h<=23;h++) oreCnt[h]=0;
+      mf.forEach(r=>{if(!r.ora)return;const h=parseInt(r.ora.split('T')[1]||r.ora);if(h>=6&&h<=23)oreCnt[h]=(oreCnt[h]||0)+1;});
+      const rows=[['Ora','Documenti','Fascia']];
+      Object.entries(oreCnt).forEach(([h,c])=>rows.push([h+':00',c,parseInt(h)<12?'Colazione':parseInt(h)<17?'Pranzo':'Cena']));
+      return{header,sheets:[{name:'Fasce orarie',rows}]};
+    }
+    case 'tavoli': {
+      const{colN,praN,cenN}=copertiPerServizio();
+      const totale=mf.reduce((a,r)=>a+(r.totale||0),0);
+      const totC=colN+praN+cenN;
+      const rows=[['Servizio','Coperti','Totale €','Media/coperto €']];
+      rows.push(['Colazione',colN,(totC>0?colN/totC*totale:0).toFixed(2),(colN>0?(colN/totC*totale)/colN:0).toFixed(2)]);
+      rows.push(['Pranzo',praN,(totC>0?praN/totC*totale:0).toFixed(2),(praN>0?(praN/totC*totale)/praN:0).toFixed(2)]);
+      rows.push(['Cena',cenN,(totC>0?cenN/totC*totale:0).toFixed(2),(cenN>0?(cenN/totC*totale)/cenN:0).toFixed(2)]);
+      rows.push(['TOTALE',totC,totale.toFixed(2),(totC>0?totale/totC:0).toFixed(2)]);
+      return{header,sheets:[{name:'Coperti',rows}]};
+    }
+    default: {
+      const rows=[['Data','Tipo','Canale','Totale €','Cameriere']];
+      mf.forEach(r=>rows.push([r.data,r.tipo,r.canale,(r.totale||0).toFixed(2),nomeCameriere(r.idcameriere)]));
+      return{header,sheets:[{name:'Dati',rows}]};
+    }
+  }
+}
+
+function exportExcel() {
+  try {
+    const{header,sheets}=buildExportData();
+    const wb=XLSX.utils.book_new();
+    sheets.forEach(s=>{
+      const data=[header,[],s.rows[0],...s.rows.slice(1)];
+      const ws=XLSX.utils.aoa_to_sheet(data);
+      // Style header rows
+      ws['!cols']=s.rows[0].map(()=>({wch:20}));
+      XLSX.utils.book_append_sheet(wb,ws,s.name);
+    });
+    XLSX.writeFile(wb, getExportTitle()+'.xlsx');
+  } catch(e) { alert('Errore export Excel: '+e.message); }
+}
+
+async function exportPDF() {
+  try {
+    const{jsPDF}=window.jspdf;
+    const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+    const page=document.querySelector('.page.active');
+    if(!page){alert('Nessuna pagina attiva');return;}
+
+    // Show loading
+    const btn=document.querySelector('.exp-btn:last-child');
+    if(btn){btn.textContent='⏳ PDF...';btn.disabled=true;}
+
+    const canvas=await html2canvas(page,{scale:1.5,useCORS:true,backgroundColor:'#f2f2f7',logging:false});
+    const imgData=canvas.toDataURL('image/jpeg',0.85);
+    const pdfW=doc.internal.pageSize.getWidth();
+    const pdfH=doc.internal.pageSize.getHeight();
+    const imgW=pdfW-20;
+    const imgH=(canvas.height*imgW)/canvas.width;
+
+    // Add title
+    const{da,a}=getRange();
+    const pageName=page.id.replace('page-','').toUpperCase();
+    doc.setFontSize(14);doc.setFont('helvetica','bold');
+    doc.text('Gerì — '+pageName,10,12);
+    doc.setFontSize(9);doc.setFont('helvetica','normal');
+    doc.setTextColor(110,110,115);
+    doc.text('Periodo: '+da+(da!==a?' → '+a:''),10,18);
+    doc.setTextColor(0,0,0);
+
+    // Paginate image
+    let yPos=22;
+    let remainingH=imgH;
+    let srcY=0;
+    const pageContentH=pdfH-30;
+
+    while(remainingH>0){
+      const sliceH=Math.min(remainingH,pageContentH);
+      const sliceCanvas=document.createElement('canvas');
+      sliceCanvas.width=canvas.width;
+      sliceCanvas.height=(sliceH/imgH)*canvas.height;
+      const ctx=sliceCanvas.getContext('2d');
+      ctx.drawImage(canvas,0,srcY,canvas.width,sliceCanvas.height,0,0,canvas.width,sliceCanvas.height);
+      const sliceData=sliceCanvas.toDataURL('image/jpeg',0.85);
+      doc.addImage(sliceData,'JPEG',10,yPos,imgW,sliceH);
+      remainingH-=sliceH;
+      srcY+=(sliceH/imgH)*canvas.height;
+      if(remainingH>0){doc.addPage();yPos=10;}
+    }
+
+    doc.save(getExportTitle()+'.pdf');
+    if(btn){btn.textContent='📄 PDF';btn.disabled=false;}
+  } catch(e) {
+    alert('Errore export PDF: '+e.message);
+    const btn=document.querySelector('.exp-btn:last-child');
+    if(btn){btn.textContent='📄 PDF';btn.disabled=false;}
+  }
+}
+// ────────────────────────────────────────────────────────────────────────────
+
 </script>
 </body>
 </html>
