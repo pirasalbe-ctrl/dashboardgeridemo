@@ -1793,6 +1793,9 @@ function classificaTBLog(descr) {
 
 function renderAnomalie(){
   // Usa allTBL (TBLOG da G_CFG) come fonte principale del log operativo
+  const{da:daA,a:aA}=getRange();
+  const tblFilt = allTBL.filter(r=>{if(!r.dataora)return false;const d=r.dataora.split('T')[0];return d>=daA&&d<=aA;});
+
   const storni = tblFilt.filter(r=>{
     const d=(r.descrizione||'').toLowerCase();
     return d.includes('motivazione storno')||d.includes('cancellato il tavolo')||d.includes('diminuita la quantit');
@@ -1804,10 +1807,7 @@ function renderAnomalie(){
     <div class="kpi red"><div class="label">Storni/Cancellaz.</div><div class="value">${storni.length}</div></div>
     <div class="kpi amber"><div class="label">Sconti</div><div class="value">${sconti.length}</div></div>
     <div class="kpi" style="border-top:3px solid #bf5af2"><div class="label">Mod. prezzo</div><div class="value">${modifiche.length}</div></div>
-    <div class="kpi blue"><div class="label">Tot. eventi log</div><div class="value">${allTBL.length}</div></div>`;
-
-  const{da:daA,a:aA}=getRange();
-  const tblFilt = allTBL.filter(r=>{if(!r.dataora)return false;const d=r.dataora.split('T')[0];return d>=daA&&d<=aA;});
+    <div class="kpi blue"><div class="label">Tot. eventi log</div><div class="value">${tblFilt.length}</div></div>`;
   const tblItems = tblFilt.map(r=>{
     const{tipo,badge,label}=classificaTBLog(r.descrizione);
     const ts = r.dataora||'';
