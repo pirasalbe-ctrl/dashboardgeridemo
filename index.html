@@ -812,7 +812,7 @@ async function loadAll() {
       sbGet('anomalie',{'data':'gte.'+da,'order':'dataora.desc'}).catch(()=>[]),
       sbGet('categorie',{'order':'pezzi.desc'}).catch(()=>[]),
       sbGet('camerieri',{'order':'id.asc'}).catch(()=>[]),
-      sbGet('tblog',{'dataora':'gte.'+da+'T00:00:00','order':'dataora.desc'}).catch(()=>[])
+      sbGet('tblog',{'dataora':'gte.'+daMin+'T00:00:00','order':'dataora.desc'}).catch(()=>[])
     ]);
     // allMF contiene 35gg — non filtriamo qui, getMF() applica il filtro periodo
     // allMT, allMP, allAN filtrati sul periodo selezionato
@@ -820,7 +820,7 @@ async function loadAll() {
     allMP=allMP.filter(r=>r.data>=da&&r.data<=a);
     allLM=allLM.filter(r=>{if(!r.dataora)return false;const d=r.dataora.split('T')[0];return d>=da&&d<=a;});
     allAN=allAN.filter(r=>r.data>=da&&r.data<=a);
-    allTBL=allTBL.filter(r=>{if(!r.dataora)return false;const d=r.dataora.split('T')[0];return d>=da&&d<=a;});
+    // allTBL non filtrato per periodo — viene filtrato in renderAnomalie per il periodo corrente
 
     // ── PUNTO CRITICO: arricchisce allMF con canale calcolato correttamente ──
     // Deve essere chiamato DOPO che sia allMF che allMT sono stati caricati e filtrati,
@@ -873,6 +873,16 @@ function getMF() {
   const{da,a}=getRange();
   const base = (showP ? allMF : allMF.filter(r=>r.tipo!=='P')).filter(r=>r.data>=da&&r.data<=a);
   return filterByOra(base);
+}
+
+function getMT() {
+  // allMT è già filtrato per periodo in loadAll, ma per sicurezza riapplichiamo
+  const{da,a}=getRange();
+  return allMT.filter(r=>{
+    if(!r.dataoracomanda) return false;
+    const d=r.dataoracomanda.split('T')[0];
+    return d>=da&&d<=a;
+  });
 }
 
 // ── METEO ──────────────────────────────────────────────────────────────────
@@ -984,9 +994,9 @@ function renderPage(page){
 
 function copertiPerServizio(){
   const isCoperto = r => r.descrizione && r.descrizione.toLowerCase().includes('coperto');
-  const col = allMT.filter(r => isCoperto(r) && r.descrizione.toLowerCase().includes('colazione'));
-  const pra = allMT.filter(r => isCoperto(r) && r.descrizione.toLowerCase().includes('pranzo'));
-  const cen = allMT.filter(r => isCoperto(r) && r.descrizione.toLowerCase().includes('cena'));
+  const mt=getMT(); const col = mt.filter(r => isCoperto(r) && r.descrizione.toLowerCase().includes('colazione'));
+  const pra = mt.filter(r => isCoperto(r) && r.descrizione.toLowerCase().includes('pranzo'));
+  const cen = mt.filter(r => isCoperto(r) && r.descrizione.toLowerCase().includes('cena'));
   const sumQ = arr => arr.reduce((a,r) => a + (r.quant||0), 0);
   return{col, pra, cen, colN: sumQ(col), praN: sumQ(pra), cenN: sumQ(cen)};
 }
@@ -1139,11 +1149,11 @@ function renderVendPiatti(canale){
   // allMT.canale rispecchia il canale del documento padre
   let rows;
   if (canale === 'tutti') {
-    rows = allMT.filter(r=>r.descrizione);
+    rows = getMT().filter(r=>r.descrizione);
   } else {
     // Trova i codici movfisc del canale selezionato
     const{da:daVP,a:aVP}=getRange(); const codiciFilt = new Set(allMF.filter(r=>r.data>=daVP&&r.data<=aVP&&r.canale===canale).map(r=>r.codice));
-    rows = allMT.filter(r=>r.descrizione && codiciFilt.has(r.codmovfisc));
+    rows = getMT().filter(r=>r.descrizione && codiciFilt.has(r.codmovfisc));
   }
 
   const isVar = n => n.startsWith('(V)') || n.startsWith('(v)');
@@ -1216,7 +1226,7 @@ function setPiattiSort(by, btn) {
 function renderPiatti(){
   renderAnnoCfrBar('annoCfr_page_piatti');
   const cnt={}, val={};
-  allMT.forEach(r=>{
+  getMT().forEach(r=>{
     const k=r.descrizione||'?';
     cnt[k]=(cnt[k]||0)+(r.quant||1);
     val[k]=(val[k]||0)+((r.quant||1)*(r.prezzo||0));
@@ -1259,7 +1269,7 @@ function renderPiatti(){
   if (catEl) {
     const catMap = {};
     const catPiattiMap = {}; // per ogni categoria, mappa piatto → {pz, val}
-    allMT.forEach(r => {
+    getMT().forEach(r => {
       if (!r.categoria) return;
       if (!catMap[r.categoria]) catMap[r.categoria] = {pz:0, val:0};
       catMap[r.categoria].pz += (r.quant||1);
@@ -1553,7 +1563,7 @@ async function renderConfronto() {
     meteoCard.style.display = 'none';
   }
 
-  const baseDays = annoData[anni[0]]?.days || [];
+  const baseDays = [...new Set(annoData[anni[0]]?.days || [])];
   const labels = baseDays.map(g => {
     const d = new Date(g+'T12:00:00');
     if (cfrMode==='mese') return d.getDate()+'';
@@ -1783,12 +1793,12 @@ function classificaTBLog(descr) {
 
 function renderAnomalie(){
   // Usa allTBL (TBLOG da G_CFG) come fonte principale del log operativo
-  const storni = allTBL.filter(r=>{
+  const storni = tblFilt.filter(r=>{
     const d=(r.descrizione||'').toLowerCase();
     return d.includes('motivazione storno')||d.includes('cancellato il tavolo')||d.includes('diminuita la quantit');
   });
-  const sconti = allTBL.filter(r=>(r.descrizione||'').toLowerCase().includes('applicato sconto'));
-  const modifiche = allTBL.filter(r=>(r.descrizione||'').toLowerCase().includes('modificato il prezzo'));
+  const sconti = tblFilt.filter(r=>(r.descrizione||'').toLowerCase().includes('applicato sconto'));
+  const modifiche = tblFilt.filter(r=>(r.descrizione||'').toLowerCase().includes('modificato il prezzo'));
 
   document.getElementById('kpiAnomalie').innerHTML=`
     <div class="kpi red"><div class="label">Storni/Cancellaz.</div><div class="value">${storni.length}</div></div>
@@ -1796,7 +1806,9 @@ function renderAnomalie(){
     <div class="kpi" style="border-top:3px solid #bf5af2"><div class="label">Mod. prezzo</div><div class="value">${modifiche.length}</div></div>
     <div class="kpi blue"><div class="label">Tot. eventi log</div><div class="value">${allTBL.length}</div></div>`;
 
-  const tblItems = allTBL.map(r=>{
+  const{da:daA,a:aA}=getRange();
+  const tblFilt = allTBL.filter(r=>{if(!r.dataora)return false;const d=r.dataora.split('T')[0];return d>=daA&&d<=aA;});
+  const tblItems = tblFilt.map(r=>{
     const{tipo,badge,label}=classificaTBLog(r.descrizione);
     const ts = r.dataora||'';
     const dt = ts ? new Date(ts).toLocaleString('it-IT',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
@@ -1903,7 +1915,7 @@ function buildExportData() {
       Object.entries(cnt).sort((a,b)=>b[1]-a[1]).forEach(([n,q])=>rows.push([n,Math.round(q),(val[n]||0).toFixed(2)]));
       const catRows=[['Categoria','Pezzi','Valore €']];
       const catMap={};
-      allMT.forEach(r=>{if(!r.categoria)return;if(!catMap[r.categoria])catMap[r.categoria]={pz:0,val:0};catMap[r.categoria].pz+=(r.quant||1);catMap[r.categoria].val+=(r.quant||1)*(r.prezzo||0);});
+      getMT().forEach(r=>{if(!r.categoria)return;if(!catMap[r.categoria])catMap[r.categoria]={pz:0,val:0};catMap[r.categoria].pz+=(r.quant||1);catMap[r.categoria].val+=(r.quant||1)*(r.prezzo||0);});
       Object.entries(catMap).sort((a,b)=>b[1].pz-a[1].pz).forEach(([c,v])=>catRows.push([c,Math.round(v.pz),v.val.toFixed(2)]));
       return{header,sheets:[{name:'Piatti',rows},{name:'Categorie',rows:catRows}]};
     }
