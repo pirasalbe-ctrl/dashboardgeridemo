@@ -992,7 +992,7 @@ function renderHome(){
   const mf=getMF();
   const totS=mf.filter(r=>r.tipo==='S').reduce((a,r)=>a+(r.totale||0),0);
   const totF=mf.filter(r=>r.tipo==='F').reduce((a,r)=>a+(r.totale||0),0);
-  const totP=allMF.filter(r=>r.tipo==='P').reduce((a,r)=>a+(r.totale||0),0);
+  const{da,a}=getRange(); const mfAll=allMF.filter(r=>r.data>=da&&r.data<=a); const totP=mfAll.filter(r=>r.tipo==='P').reduce((a,r)=>a+(r.totale||0),0);
   const totale=totS+totF+(showP?totP:0);
   const nDoc=mf.length;
   const {colN,praN,cenN}=copertiPerServizio();
@@ -1016,7 +1016,7 @@ function renderHome(){
       <div class="hc-val" style="font-size:26px">${fmt(totF)}</div>
       <div class="hc-sub">${mf.filter(r=>r.tipo==='F').length} doc</div>
     </div>
-    ${showP?`<div class="hero-card amber"><div class="hc-label">🧾 Conti (P)</div><div class="hc-val" style="font-size:26px">${fmt(totP)}</div><div class="hc-sub">${allMF.filter(r=>r.tipo==='P').length} doc</div></div>`:''}`;
+    ${showP?`<div class="hero-card amber"><div class="hc-label">🧾 Conti (P)</div><div class="hc-val" style="font-size:26px">${fmt(totP)}</div><div class="hc-sub">${mfAll.filter(r=>r.tipo==='P').length} doc</div></div>`:''}`;
 
   const totColaz = totale>0&&totCop>0 ? (colN/totCop*totale) : 0;
   const totPranzo = totale>0&&totCop>0 ? (praN/totCop*totale) : 0;
@@ -1047,7 +1047,7 @@ function renderHome(){
     <div class="kpi"><div class="label">Media doc.</div><div class="value">${fmt(mediaDoc)}</div></div>
     <div class="kpi"><div class="label">Tot. coperti</div><div class="value">${fmtN(totCop)}</div></div>`;
 
-  const nS=mf.filter(r=>r.tipo==='S').length, nF=mf.filter(r=>r.tipo==='F').length, nP=allMF.filter(r=>r.tipo==='P').length;
+  const nS=mf.filter(r=>r.tipo==='S').length, nF=mf.filter(r=>r.tipo==='F').length, nP=mfAll.filter(r=>r.tipo==='P').length;
   const docItems=[
     {l:'Scontrini',v:totS,n:nS,c:'#30d158'},
     {l:'Fatture',v:totF,n:nF,c:'#0071e3'},
@@ -1094,7 +1094,7 @@ function renderHome(){
 
 function renderVenduto(){
   renderAnnoCfrBar('annoCfr_page_venduto');
-  const mf=allMF; // inclusi P per quadro completo
+  const{da:daV,a:aV}=getRange(); const mf=allMF.filter(r=>r.data>=daV&&r.data<=aV); // inclusi P per quadro completo
   const canali  = ['tavoli','immediato','asporto','domicilio'];
   const cLabels = ['Sala','Banco','Asporto','Domicilio'];
   const cSub    = ['Tavoli numerati','Banco/Cassa rapida','Ritiro asporto','Consegna a domicilio'];
@@ -1139,7 +1139,7 @@ function renderVendPiatti(canale){
     rows = allMT.filter(r=>r.descrizione);
   } else {
     // Trova i codici movfisc del canale selezionato
-    const codiciFilt = new Set(allMF.filter(r=>r.canale===canale).map(r=>r.codice));
+    const{da:daVP,a:aVP}=getRange(); const codiciFilt = new Set(allMF.filter(r=>r.data>=daVP&&r.data<=aVP&&r.canale===canale).map(r=>r.codice));
     rows = allMT.filter(r=>r.descrizione && codiciFilt.has(r.codmovfisc));
   }
 
@@ -1687,11 +1687,11 @@ function renderIncassiInPagamenti(){
 function renderDocumenti(){
   renderAnnoCfrBar('annoCfr_page_documenti');
   const mf=getMF();
-  const tipi=[...new Set(allMF.map(r=>r.tipo))].filter(Boolean).sort();
+  const{da:daD,a:aD}=getRange(); const mfD=allMF.filter(r=>r.data>=daD&&r.data<=aD); const tipi=[...new Set(mfD.map(r=>r.tipo))].filter(Boolean).sort();
   const cls={S:'b-S',F:'b-F',P:'b-P'};
   const col={S:'#30d158',F:'#0071e3',P:'#ff9f0a'};
   const docs=tipi.map(t=>{
-    const rows=(t==='P'?allMF:mf).filter(r=>r.tipo===t);
+    const rows=(t==='P'?mfD:mf).filter(r=>r.tipo===t);
     return{tipo:t,val:rows.reduce((a,r)=>a+(r.totale||0),0),cnt:rows.length};
   });
   document.getElementById('docList').innerHTML=docs.map(d=>`
