@@ -598,7 +598,8 @@ body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--bg);
             <button class="cf-btn active" id="anomFiltAll" onclick="setAnomFilt('all',this)">Tutti</button>
             <button class="cf-btn" id="anomFiltStorno" onclick="setAnomFilt('storno',this)">Storni</button>
             <button class="cf-btn" id="anomFiltSconto" onclick="setAnomFilt('sconto',this)">Sconti</button>
-            <button class="cf-btn" id="anomFiltNeg" onclick="setAnomFilt('negativo',this)">Negativi</button>
+            <button class="cf-btn" id="anomFiltNeg" onclick="setAnomFilt('negativo',this)">Mod.Prezzo</button>
+            <button class="cf-btn" id="anomFiltSist" onclick="setAnomFilt('sistema',this)">Sistema</button>
           </div>
           <input id="anomSearch" type="text" placeholder="🔍 Cerca per parola chiave..."
             oninput="renderAnomalie()"
@@ -770,7 +771,7 @@ function shiftAnno(dateStr, years) {
   return d.toISOString().split('T')[0];
 }
 
-let allMF=[], allMT=[], allMP=[], allLM=[], allCAM=[], allAN=[], allCAT=[];
+let allMF=[], allMT=[], allMP=[], allLM=[], allCAM=[], allAN=[], allCAT=[], allTBL=[];
 let charts={};
 
 const fmt = v => '€'+Number(v||0).toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -803,14 +804,15 @@ async function loadAll() {
   const da35=fd(new Date(t.getFullYear(),t.getMonth(),t.getDate()-35));
   const daMin=da<da35?da:da35;
   try {
-    [allMF,allMT,allMP,allLM,allAN,allCAT,allCAM] = await Promise.all([
+    [allMF,allMT,allMP,allLM,allAN,allCAT,allCAM,allTBL] = await Promise.all([
       sbGet('movfisc',{'data':'gte.'+daMin,'order':'data.asc'}),
       sbGet('movtav',{'dataoracomanda':'gte.'+da+'T00:00:00','order':'dataoracomanda.asc'}),
       sbGet('movpag',{'data':'gte.'+da,'order':'data.asc'}),
       sbGet('log_modifiche',{'order':'dataora.desc'}).catch(()=>[]),
       sbGet('anomalie',{'data':'gte.'+da,'order':'dataora.desc'}).catch(()=>[]),
       sbGet('categorie',{'order':'pezzi.desc'}).catch(()=>[]),
-      sbGet('camerieri',{'order':'id.asc'}).catch(()=>[])
+      sbGet('camerieri',{'order':'id.asc'}).catch(()=>[]),
+      sbGet('tblog',{'dataora':'gte.'+da+'T00:00:00','order':'dataora.desc'}).catch(()=>[])
     ]);
     // allMF contiene 35gg — non filtriamo qui, getMF() applica il filtro periodo
     // allMT, allMP, allAN filtrati sul periodo selezionato
@@ -818,6 +820,7 @@ async function loadAll() {
     allMP=allMP.filter(r=>r.data>=da&&r.data<=a);
     allLM=allLM.filter(r=>{if(!r.dataora)return false;const d=r.dataora.split('T')[0];return d>=da&&d<=a;});
     allAN=allAN.filter(r=>r.data>=da&&r.data<=a);
+    allTBL=allTBL.filter(r=>{if(!r.dataora)return false;const d=r.dataora.split('T')[0];return d>=da&&d<=a;});
 
     // ── PUNTO CRITICO: arricchisce allMF con canale calcolato correttamente ──
     // Deve essere chiamato DOPO che sia allMF che allMT sono stati caricati e filtrati,
@@ -1765,56 +1768,59 @@ function setAnomFilt(type, btn) {
   renderAnomalie();
 }
 
+function classificaTBLog(descr) {
+  if (!descr) return {tipo:'altro', badge:'b-cambio', label:'LOG'};
+  const d = descr.toLowerCase();
+  if (d.includes('cancellato il tavolo')) return {tipo:'cancellazione', badge:'b-storno', label:'CANCELLAZIONE'};
+  if (d.includes('motivazione storno')) return {tipo:'storno', badge:'b-storno', label:'STORNO'};
+  if (d.includes('applicato sconto')) return {tipo:'sconto', badge:'b-sconto', label:'SCONTO'};
+  if (d.includes('modificato il prezzo')) return {tipo:'modifica', badge:'b-cambio', label:'MOD.PREZZO'};
+  if (d.includes('diminuita la quantit')) return {tipo:'storno', badge:'b-storno', label:'STORNO QTA'};
+  if (d.includes('avvio applicazione')) return {tipo:'sistema', badge:'b-annull', label:'AVVIO'};
+  if (d.includes('chiusura')) return {tipo:'sistema', badge:'b-annull', label:'CHIUSURA'};
+  return {tipo:'altro', badge:'b-cambio', label:'LOG'};
+}
+
 function renderAnomalie(){
-  const mf=getMF();
-  const storni=mf.filter(r=>r.totale<0);
-  const negativi=allMP.filter(r=>r.importo<0);
-  const scontiDoc=allAN.filter(r=>r.tipo==='sconto');
-  const tipoLabel={1:'STORNO',2:'CAMBIO PREZZO',3:'SCONTO',4:'ANNULL.'};
-  const tipoBadge={1:'b-storno',2:'b-cambio',3:'b-sconto',4:'b-annull'};
+  // Usa allTBL (TBLOG da G_CFG) come fonte principale del log operativo
+  const storni = allTBL.filter(r=>{
+    const d=(r.descrizione||'').toLowerCase();
+    return d.includes('motivazione storno')||d.includes('cancellato il tavolo')||d.includes('diminuita la quantit');
+  });
+  const sconti = allTBL.filter(r=>(r.descrizione||'').toLowerCase().includes('applicato sconto'));
+  const modifiche = allTBL.filter(r=>(r.descrizione||'').toLowerCase().includes('modificato il prezzo'));
 
   document.getElementById('kpiAnomalie').innerHTML=`
-    <div class="kpi red"><div class="label">Storni doc.</div><div class="value">${storni.length}</div><div class="sub">${fmt(Math.abs(storni.reduce((a,r)=>a+(r.totale||0),0)))}</div></div>
-    <div class="kpi amber"><div class="label">Pagamenti neg.</div><div class="value">${negativi.length}</div></div>
-    <div class="kpi" style="border-top:3px solid #bf5af2"><div class="label">Sconti</div><div class="value">${scontiDoc.length}</div><div class="sub">${fmt(scontiDoc.reduce((a,r)=>a+Math.abs(r.importo||0),0))}</div></div>
-    <div class="kpi blue"><div class="label">Log modifiche</div><div class="value">${allLM.length}</div></div>`;
+    <div class="kpi red"><div class="label">Storni/Cancellaz.</div><div class="value">${storni.length}</div></div>
+    <div class="kpi amber"><div class="label">Sconti</div><div class="value">${sconti.length}</div></div>
+    <div class="kpi" style="border-top:3px solid #bf5af2"><div class="label">Mod. prezzo</div><div class="value">${modifiche.length}</div></div>
+    <div class="kpi blue"><div class="label">Tot. eventi log</div><div class="value">${allTBL.length}</div></div>`;
 
-  const logItems = allLM.map(r=>({
-    tipo:'modifica', badge:tipoBadge[r.tipo]||'b-sconto', label:tipoLabel[r.tipo]||'MODIFICA',
-    desc:(r.motivazione_descr?r.motivazione_descr+' — ':'')+'Tavolo '+(r.tavolo_numero||'?')+(r.qtastorno?' · Qta: '+r.qtastorno:'')+(r.valorestorno?' · €'+Math.abs(r.valorestorno):''),
-    meta:(r.dataora?new Date(r.dataora).toLocaleString('it-IT',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'')+(r.cameriere_id?' · '+nomeCameriere(r.cameriere_id):''),
-    ts:r.dataora||''
-  }));
-  const storniItems = storni.map(r=>({
-    tipo:'storno', badge:'b-storno', label:'STORNO',
-    desc:'Doc. negativo #'+(r.numero||'?')+' — '+fmt(r.totale),
-    meta:(r.data||'')+(r.idcameriere?' · '+nomeCameriere(r.idcameriere):''), ts:r.ora||r.data||''
-  }));
-  const negativiItems = negativi.map(r=>({
-    tipo:'negativo', badge:'b-storno', label:'PAG. NEG.',
-    desc:(r.desc_pagamento||'Pagamento negativo')+' — '+fmt(r.importo),
-    meta:(r.data||'')+(r.idcameriere?' · '+nomeCameriere(r.idcameriere):''), ts:r.data||''
-  }));
-  const scontiItems = scontiDoc.map(r=>({
-    tipo:'sconto', badge:'b-sconto', label:'SCONTO',
-    desc:(r.descrizione||'Sconto')+' — '+fmt(Math.abs(r.importo||0))+(r.tavolo?' · Tavolo '+r.tavolo:''),
-    meta:(r.dataora?new Date(r.dataora).toLocaleString('it-IT',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'')+(r.idcameriere?' · '+nomeCameriere(r.idcameriere):''),
-    ts:r.dataora||''
-  }));
+  const tblItems = allTBL.map(r=>{
+    const{tipo,badge,label}=classificaTBLog(r.descrizione);
+    const ts = r.dataora||'';
+    const dt = ts ? new Date(ts).toLocaleString('it-IT',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
+    return {tipo, badge, label, desc:r.descrizione||'', meta:dt+(r.utente?' · '+r.utente:''), ts};
+  });
 
-  let all = [...logItems, ...storniItems, ...negativiItems, ...scontiItems];
-  if (anomFiltType !== 'all') all = all.filter(a => a.tipo === anomFiltType);
+  let all = [...tblItems];
+  if (anomFiltType !== 'all') {
+    if (anomFiltType === 'storno') all = all.filter(a=>a.tipo==='storno'||a.tipo==='cancellazione');
+    else if (anomFiltType === 'sconto') all = all.filter(a=>a.tipo==='sconto');
+    else if (anomFiltType === 'negativo') all = all.filter(a=>a.tipo==='modifica');
+    else all = all.filter(a=>a.tipo===anomFiltType);
+  }
   const kw = (document.getElementById('anomSearch')?.value||'').toLowerCase().trim();
-  if (kw) all = all.filter(a => (a.desc||'').toLowerCase().includes(kw)||(a.label||'').toLowerCase().includes(kw)||(a.meta||'').toLowerCase().includes(kw));
-  all.sort((a,b) => (b.ts||'').localeCompare(a.ts||''));
+  if (kw) all = all.filter(a=>(a.desc||'').toLowerCase().includes(kw)||(a.label||'').toLowerCase().includes(kw)||(a.meta||'').toLowerCase().includes(kw));
+  all.sort((a,b)=>(b.ts||'').localeCompare(a.ts||''));
 
   const listEl = document.getElementById('anomalyList');
   if (!listEl) return;
   if (!all.length) {
-    listEl.innerHTML = kw ? `<div class="empty">Nessun risultato per "<strong>${kw}</strong>"</div>` : '<div class="empty">Nessuna anomalia nel periodo</div>';
+    listEl.innerHTML = kw?`<div class="empty">Nessun risultato per "<strong>${kw}</strong>"</div>`:'<div class="empty">Nessun evento nel periodo</div>';
     return;
   }
-  listEl.innerHTML = all.slice(0,100).map(a=>`
+  listEl.innerHTML = all.slice(0,200).map(a=>`
     <div class="anom-row">
       <span class="anom-badge ${a.badge}">${a.label}</span>
       <div><div class="anom-desc">${a.desc}</div><div class="anom-meta">${a.meta}</div></div>
