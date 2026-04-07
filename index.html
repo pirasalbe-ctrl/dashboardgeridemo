@@ -810,7 +810,11 @@ function getRange() {
   return{da:document.getElementById('d1').value,a:document.getElementById('d2').value};
 }
 
+let isLoading = false;
+
 async function loadAll() {
+  if (isLoading) return; // evita reload concorrenti
+  isLoading = true;
   document.getElementById('syncInfo').textContent='...';
   const{da,a}=getRange();
   // Per il confronto carichiamo sempre almeno 35 giorni di movfisc
@@ -821,7 +825,7 @@ async function loadAll() {
     [allMF,allMT,allMP,allLM,allAN,allCAT,allCAM,allTBL] = await Promise.all([
       sbGet('movfisc',{'data':'gte.'+daMin,'order':'data.asc'}),
       sbGet('movtav',{'dataoracomanda':'gte.'+da+'T00:00:00','order':'dataoracomanda.asc'}),
-      sbGet('movpag',{'data':'gte.'+da,'order':'data.asc'}),
+      sbGet('movpag',{'data':'gte.'+daMin,'order':'data.asc'}),
       sbGet('log_modifiche',{'order':'dataora.desc'}).catch(()=>[]),
       sbGet('anomalie',{'data':'gte.'+da,'order':'dataora.desc'}).catch(()=>[]),
       sbGet('categorie',{'order':'pezzi.desc'}).catch(()=>[]),
@@ -831,7 +835,7 @@ async function loadAll() {
     // allMF contiene 35gg — non filtriamo qui, getMF() applica il filtro periodo
     // allMT, allMP, allAN filtrati sul periodo selezionato
     allMT=allMT.filter(r=>{if(!r.dataoracomanda)return false;const d=r.dataoracomanda.split('T')[0];return d>=da&&d<=a;});
-    allMP=allMP.filter(r=>r.data>=da&&r.data<=a);
+    // allMP non filtrato qui — come allMF, viene filtrato nelle funzioni di rendering
     allLM=allLM.filter(r=>{if(!r.dataora)return false;const d=r.dataora.split('T')[0];return d>=da&&d<=a;});
     allAN=allAN.filter(r=>r.data>=da&&r.data<=a);
     // allTBL non filtrato per periodo — viene filtrato in renderAnomalie per il periodo corrente
@@ -863,6 +867,8 @@ async function loadAll() {
   } catch(e) {
     document.getElementById('syncInfo').textContent='Errore';
     console.error(e);
+  } finally {
+    isLoading = false;
   }
 }
 
@@ -890,13 +896,17 @@ function getMF() {
 }
 
 function getMT() {
-  // allMT è già filtrato per periodo in loadAll, ma per sicurezza riapplichiamo
   const{da,a}=getRange();
   return allMT.filter(r=>{
     if(!r.dataoracomanda) return false;
     const d=r.dataoracomanda.split('T')[0];
     return d>=da&&d<=a;
   });
+}
+
+function getMP() {
+  const{da,a}=getRange();
+  return allMP.filter(r=>r.data>=da&&r.data<=a);
 }
 
 // ── METEO ──────────────────────────────────────────────────────────────────
@@ -1106,7 +1116,7 @@ function renderHome(){
 
   // Mini pagamenti sulla home
   const ps2={};
-  allMP.forEach(r=>{const k=r.desc_pagamento||'Altro';ps2[k]=(ps2[k]||0)+(r.importo||0);});
+  getMP().forEach(r=>{const k=r.desc_pagamento||'Altro';ps2[k]=(ps2[k]||0)+(r.importo||0);});
   const sortedP2=Object.entries(ps2).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]);
   const totP2=sortedP2.reduce((a,[,v])=>a+v,0);
   const pagHomeEl=document.getElementById('pagHomeList');
@@ -1678,7 +1688,7 @@ function renderCamerieri(){
 function renderPagamenti(){
   renderAnnoCfrBar('annoCfr_page_pagamenti');
   const ps={};
-  allMP.forEach(r=>{const k=r.desc_pagamento||'Altro';ps[k]=(ps[k]||0)+(r.importo||0);});
+  getMP().forEach(r=>{const k=r.desc_pagamento||'Altro';ps[k]=(ps[k]||0)+(r.importo||0);});
   const sorted=Object.entries(ps).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]);
   const tot=sorted.reduce((a,[,v])=>a+v,0);
   document.getElementById('pagLegend').innerHTML=sorted.map(([n,v],i)=>`<div class="leg-item"><div class="leg-dot" style="background:${PAL[i%PAL.length]};"></div>${n} ${tot>0?Math.round(v/tot*100)+'%':''}</div>`).join('');
@@ -1942,7 +1952,7 @@ function buildExportData() {
     }
     case 'pagamenti': {
       const ps={};
-      allMP.forEach(r=>{const k=r.desc_pagamento||'Altro';ps[k]=(ps[k]||0)+(r.importo||0);});
+      getMP().forEach(r=>{const k=r.desc_pagamento||'Altro';ps[k]=(ps[k]||0)+(r.importo||0);});
       const rows=[['Metodo','Importo €']];
       Object.entries(ps).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]).forEach(([n,v])=>rows.push([n,v.toFixed(2)]));
       return{header,sheets:[{name:'Pagamenti',rows}]};
