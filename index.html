@@ -793,8 +793,8 @@ function fmtDataora(isoStr) {
 
 async function sbGet(table, extra) {
   const url = new URL(SB_URL+'/rest/v1/'+table);
-  url.searchParams.set('limit','10000');
-  if(extra) Object.entries(extra).forEach(([k,v])=>url.searchParams.append(k,v));
+  url.searchParams.set('limit','10000'); // default, può essere sovrascritto da extra
+  if(extra) Object.entries(extra).forEach(([k,v])=>url.searchParams.set(k,v));
   const r = await fetch(url.toString(), { headers:{ 'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Accept':'application/json' } });
   if(!r.ok) throw new Error(r.status+': '+await r.text());
   return r.json();
@@ -823,9 +823,9 @@ async function loadAll() {
   const daMin=da<da35?da:da35;
   try {
     [allMF,allMT,allMP,allLM,allAN,allCAT,allCAM,allTBL] = await Promise.all([
-      sbGet('movfisc',{'data':'gte.'+daMin,'order':'data.asc'}),
-      sbGet('movtav',{'dataoracomanda':'gte.'+da+'T00:00:00','order':'dataoracomanda.asc'}),
-      sbGet('movpag',{'data':'gte.'+daMin,'order':'data.asc'}),
+      sbGet('movfisc',{'data':'gte.'+daMin,'order':'data.asc','limit':'50000'}),
+      sbGet('movtav',{'dataoracomanda':'gte.'+da+'T00:00:00','order':'dataoracomanda.asc','limit':'10000'}),
+      sbGet('movpag',{'data':'gte.'+daMin,'order':'data.asc','limit':'50000'}),
       sbGet('log_modifiche',{'order':'dataora.desc'}).catch(()=>[]),
       sbGet('anomalie',{'data':'gte.'+da,'order':'dataora.desc'}).catch(()=>[]),
       sbGet('categorie',{'order':'pezzi.desc'}).catch(()=>[]),
@@ -1893,7 +1893,7 @@ document.getElementById('d1').value=mfa.toISOString().split('T')[0];
 
 initAnnoSelector();
 loadAll();
-setInterval(loadAll, 1800000);
+setInterval(loadAll, 60000);
 
 // ── EXPORT ────────────────────────────────────────────────────────────────
 
