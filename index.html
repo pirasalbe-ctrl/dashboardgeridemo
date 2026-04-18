@@ -824,7 +824,7 @@ async function loadAll() {
   try {
     [allMF,allMT,allMP,allLM,allAN,allCAT,allCAM,allTBL] = await Promise.all([
       sbGet('movfisc',{'data':'gte.'+daMin,'order':'data.asc','limit':'50000'}),
-      sbGet('movtav',{'dataoracomanda':'gte.'+da+'T00:00:00','order':'dataoracomanda.asc','limit':'10000'}),
+      sbGet('movtav',{'dataoracomanda':'gte.'+daMin+'T00:00:00','order':'dataoracomanda.asc','limit':'10000'}).catch(()=>[]),
       sbGet('movpag',{'data':'gte.'+daMin,'order':'data.asc','limit':'50000'}),
       sbGet('log_modifiche',{'order':'dataora.desc'}).catch(()=>[]),
       sbGet('anomalie',{'data':'gte.'+da,'order':'dataora.desc'}).catch(()=>[]),
@@ -1292,17 +1292,29 @@ function renderPiatti(){
   const catEl = document.getElementById('catStats');
   if (catEl) {
     const catMap = {};
-    const catPiattiMap = {}; // per ogni categoria, mappa piatto → {pz, val}
+    const catPiattiMap = {};  // categoria → piatto normale → {pz, val}
+    const catVariazioniMap = {}; // categoria → variazione → {pz, val}
     getMT().forEach(r => {
       if (!r.categoria) return;
+      const isVar = r.is_variazione === true;
       if (!catMap[r.categoria]) catMap[r.categoria] = {pz:0, val:0};
-      catMap[r.categoria].pz += (r.quant||1);
-      catMap[r.categoria].val += (r.quant||1)*(r.prezzo||0);
-      if (!catPiattiMap[r.categoria]) catPiattiMap[r.categoria] = {};
+      // Le variazioni non contano nei totali categoria (sono extra)
+      if (!isVar) {
+        catMap[r.categoria].pz += (r.quant||1);
+        catMap[r.categoria].val += (r.quant||1)*(r.prezzo||0);
+      }
       const k = r.descrizione||'?';
-      if (!catPiattiMap[r.categoria][k]) catPiattiMap[r.categoria][k] = {pz:0,val:0};
-      catPiattiMap[r.categoria][k].pz += (r.quant||1);
-      catPiattiMap[r.categoria][k].val += (r.quant||1)*(r.prezzo||0);
+      if (isVar) {
+        if (!catVariazioniMap[r.categoria]) catVariazioniMap[r.categoria] = {};
+        if (!catVariazioniMap[r.categoria][k]) catVariazioniMap[r.categoria][k] = {pz:0,val:0};
+        catVariazioniMap[r.categoria][k].pz += (r.quant||1);
+        catVariazioniMap[r.categoria][k].val += (r.quant||1)*(r.prezzo||0);
+      } else {
+        if (!catPiattiMap[r.categoria]) catPiattiMap[r.categoria] = {};
+        if (!catPiattiMap[r.categoria][k]) catPiattiMap[r.categoria][k] = {pz:0,val:0};
+        catPiattiMap[r.categoria][k].pz += (r.quant||1);
+        catPiattiMap[r.categoria][k].val += (r.quant||1)*(r.prezzo||0);
+      }
     });
     const catSorted = Object.entries(catMap).sort((a,b)=>b[1].pz-a[1].pz);
     const totPz = catSorted.reduce((a,[,v])=>a+v.pz,0)||1;
@@ -1324,27 +1336,50 @@ function renderPiatti(){
           </tr></thead>
           <tbody id="catTbody">${catSorted.map(([cat,v],i)=>{
             const piatti = Object.entries(catPiattiMap[cat]||{}).sort((a,b)=>b[1].pz-a[1].pz);
+            const variazioni = Object.entries(catVariazioniMap[cat]||{}).sort((a,b)=>b[1].pz-a[1].pz);
             const catPzTot = v.pz||1; const catValTot = v.val||1;
+
+            // Righe piatti normali
             const piattiRows = piatti.map(([nome,pv])=>`
-              <tr class="cat-detail-row cat-detail-${i}" style="display:none;background:#f8f8fc;">
+              <tr class="cat-detail-row cat-detail-${i}" style="display:none;background:var(--bg2);">
                 <td style="padding:4px 8px 4px 28px;color:var(--text2);font-size:12px">${nome}</td>
                 <td style="padding:4px 8px;text-align:right;font-size:12px">${Math.round(pv.pz)}</td>
                 <td style="padding:4px 8px;text-align:right;color:var(--text3);font-size:12px">${(pv.pz/catPzTot*100).toFixed(1)}%</td>
                 <td style="padding:4px 8px;text-align:right;font-size:12px">${fmt(pv.val)}</td>
                 <td style="padding:4px 8px;text-align:right;color:var(--text3);font-size:12px">${(pv.val/catValTot*100).toFixed(1)}%</td>
               </tr>`).join('');
+
+            // Separatore + righe variazioni
+            const varRows = variazioni.length ? `
+              <tr class="cat-detail-row cat-detail-${i}" style="display:none;background:var(--bg2);">
+                <td colspan="5" style="padding:3px 8px 3px 28px;border-top:1px dashed var(--border);">
+                  <span style="font-size:10px;font-weight:600;color:var(--text3);letter-spacing:0.5px;text-transform:uppercase;">Variazioni</span>
+                </td>
+              </tr>` +
+              variazioni.map(([nome,pv])=>`
+              <tr class="cat-detail-row cat-detail-${i}" style="display:none;background:#fffbf0;">
+                <td style="padding:4px 8px 4px 28px;color:#b45309;font-size:12px;font-style:italic;">
+                  <span style="font-size:10px;font-weight:700;background:#fef3c7;color:#92400e;border-radius:3px;padding:1px 4px;margin-right:4px;">var.</span>${nome}
+                </td>
+                <td style="padding:4px 8px;text-align:right;font-size:12px;color:#b45309">${Math.round(pv.pz)}</td>
+                <td style="padding:4px 8px;text-align:right;color:var(--text3);font-size:12px">—</td>
+                <td style="padding:4px 8px;text-align:right;font-size:12px;color:#b45309">${fmt(pv.val)}</td>
+                <td style="padding:4px 8px;text-align:right;color:var(--text3);font-size:12px">—</td>
+              </tr>`).join('') : '';
+
             return `
               <tr class="cat-row" data-cat="${i}" data-catname="${cat}" style="border-bottom:1px solid var(--border);cursor:pointer;${i%2===0?'background:var(--bg);':''}"
                 onclick="toggleCatDetail(${i}, this)">
                 <td style="padding:6px 8px;font-weight:600">
                   <span class="cat-arrow-${i}" style="display:inline-block;transition:transform 0.2s;margin-right:4px;color:var(--text3)">▶</span>${cat}
+                  ${variazioni.length ? `<span style="font-size:10px;background:#fef3c7;color:#92400e;border-radius:3px;padding:1px 5px;margin-left:6px;">${variazioni.length} var.</span>` : ''}
                 </td>
                 <td style="padding:6px 8px;text-align:right">${Math.round(v.pz)}</td>
                 <td style="padding:6px 8px;text-align:right;color:var(--text3)">${(v.pz/totPz*100).toFixed(1)}%</td>
                 <td style="padding:6px 8px;text-align:right">${fmt(v.val)}</td>
                 <td style="padding:6px 8px;text-align:right;color:var(--text3)">${(v.val/totVal*100).toFixed(1)}%</td>
               </tr>
-              ${piattiRows}`;
+              ${piattiRows}${varRows}`;
           }).join('')}
           </tbody>
           <tfoot><tr style="border-top:2px solid var(--border);font-weight:600;">
