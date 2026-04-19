@@ -900,6 +900,23 @@ function getMT() {
   return allMT.filter(r=>{
     if(!r.dataoracomanda) return false;
     const d=r.dataoracomanda.split('T')[0];
+    if (d<da||d>a) return false;
+    // ── Regole di esclusione per statistiche piatti (logica allineata a Gerì) ──
+    // 1) "Pasto completo CR" con prezzo negativo (compensazione scontrino tecnico)
+    // 2) "Sconto" dentro documenti di tipo S con totale=0 (sconto tecnico conto alla romana)
+    const desc = (r.descrizione||'').trim();
+    if (desc === 'Pasto completo CR' && (r.prezzo||0) < 0) return false;
+    if (desc === 'Sconto' && r.doc_tipo === 'S' && Math.abs(r.doc_totale||0) < 0.005) return false;
+    return true;
+  });
+}
+
+// Versione raw (senza esclusioni) — usata se serve l'elenco completo delle righe
+function getMTRaw() {
+  const{da,a}=getRange();
+  return allMT.filter(r=>{
+    if(!r.dataoracomanda) return false;
+    const d=r.dataoracomanda.split('T')[0];
     return d>=da&&d<=a;
   });
 }
@@ -1249,8 +1266,11 @@ function setPiattiSort(by, btn) {
 
 function renderPiatti(){
   renderAnnoCfrBar('annoCfr_page_piatti');
+  // Regole di esclusione (Pasto completo CR negativo, Sconto tecnico) sono applicate in getMT()
+  const mtFiltrato = getMT();
+
   const cnt={}, val={};
-  getMT().forEach(r=>{
+  mtFiltrato.forEach(r=>{
     const k=r.descrizione||'?';
     cnt[k]=(cnt[k]||0)+(r.quant||1);
     val[k]=(val[k]||0)+((r.quant||1)*(r.prezzo||0));
@@ -1294,13 +1314,17 @@ function renderPiatti(){
     const catMap = {};
     const catPiattiMap = {};  // categoria → piatto normale → {pz, val}
     const catVariazioniMap = {}; // categoria → variazione → {pz, val}
-    getMT().forEach(r => {
+    mtFiltrato.forEach(r => {
       if (!r.categoria) return;
       const isVar = r.is_variazione === true;
       if (!catMap[r.categoria]) catMap[r.categoria] = {pz:0, val:0};
-      // Le variazioni non contano nei totali categoria (sono extra)
       if (!isVar) {
+        // Piatti normali: contano in pezzi e valore
         catMap[r.categoria].pz += (r.quant||1);
+        catMap[r.categoria].val += (r.quant||1)*(r.prezzo||0);
+      } else {
+        // Variazioni: NON contano nei pezzi, ma il loro valore (negativo o positivo)
+        // viene sottratto/sommato al totale categoria (replica logica Gerì)
         catMap[r.categoria].val += (r.quant||1)*(r.prezzo||0);
       }
       const k = r.descrizione||'?';
@@ -1969,7 +1993,7 @@ function buildExportData() {
     }
     case 'piatti': {
       const cnt={},val={};
-      allMT.forEach(r=>{if(!r.descrizione)return;cnt[r.descrizione]=(cnt[r.descrizione]||0)+(r.quant||1);val[r.descrizione]=(val[r.descrizione]||0)+((r.quant||1)*(r.prezzo||0));});
+      getMT().forEach(r=>{if(!r.descrizione)return;cnt[r.descrizione]=(cnt[r.descrizione]||0)+(r.quant||1);val[r.descrizione]=(val[r.descrizione]||0)+((r.quant||1)*(r.prezzo||0));});
       const rows=[['Piatto','Quantità','Valore €']];
       Object.entries(cnt).sort((a,b)=>b[1]-a[1]).forEach(([n,q])=>rows.push([n,Math.round(q),(val[n]||0).toFixed(2)]));
       const catRows=[['Categoria','Pezzi','Valore €']];
