@@ -897,18 +897,26 @@ function getMF() {
 
 function getMT() {
   const{da,a}=getRange();
-  return allMT.filter(r=>{
-    if(!r.dataoracomanda) return false;
+  const out = [];
+  allMT.forEach(r => {
+    if(!r.dataoracomanda) return;
     const d=r.dataoracomanda.split('T')[0];
-    if (d<da||d>a) return false;
-    // ── Regole di esclusione per statistiche piatti (logica allineata a Gerì) ──
-    // 1) "Pasto completo CR" con prezzo negativo (compensazione scontrino tecnico)
-    // 2) "Sconto" dentro documenti di tipo S con totale=0 (sconto tecnico conto alla romana)
+    if (d<da||d>a) return;
+    // ── Regole allineate a Gerì per statistiche piatti ─────────────────────
     const desc = (r.descrizione||'').trim();
-    if (desc === 'Pasto completo CR' && (r.prezzo||0) < 0) return false;
-    if (desc === 'Sconto' && r.doc_tipo === 'S' && Math.abs(r.doc_totale||0) < 0.005) return false;
-    return true;
+    // 1) Escludi "Pasto completo CR" con prezzo negativo (compensazione scontrino tecnico)
+    if (desc === 'Pasto completo CR' && (r.prezzo||0) < 0) return;
+    // 2) Escludi "Sconto" dentro documento tipo S con totale 0 (sconto tecnico)
+    if (desc === 'Sconto' && r.doc_tipo === 'S' && Math.abs(r.doc_totale||0) < 0.005) return;
+    // 3) "Pasto completo CR" positivo → conta come pezzo ma a prezzo 0
+    //    (mostra quante volte è stato usato il conto alla romana, senza sballare i totali)
+    if (desc === 'Pasto completo CR' && (r.prezzo||0) > 0) {
+      out.push(Object.assign({}, r, { prezzo: 0 }));
+      return;
+    }
+    out.push(r);
   });
+  return out;
 }
 
 // Versione raw (senza esclusioni) — usata se serve l'elenco completo delle righe
